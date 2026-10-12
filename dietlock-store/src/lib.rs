@@ -366,6 +366,25 @@ mod tests {
         assert_eq!(dates, ["2026-10-11", "2026-10-12", "2026-10-13"]);
     }
 
+    #[test]
+    fn list_with_from_after_to_is_empty() {
+        let mut s = store();
+        for d in ["2026-10-12", "2026-10-13", "2026-10-14"] {
+            s.save_weigh_in(&weigh(d, 800, true), false).unwrap();
+            s.save_intake(&intake(d, None), false).unwrap();
+        }
+        assert!(
+            s.list_weigh_ins(day("2026-10-14"), day("2026-10-12"))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            s.list_intakes(day("2026-10-14"), day("2026-10-12"))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
     fn sql_refused(s: &Store, sql: &str) {
         let err = s.conn().execute(sql, []).unwrap_err();
         assert!(
