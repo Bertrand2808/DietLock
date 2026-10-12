@@ -1,0 +1,12 @@
+[package]
+name = "dietlock-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+dietlock-core = { path = "../dietlock-core" }
+# `bundled` : SQLite compilée avec la crate, indépendante de celle de la machine.
+rusqlite = { version = "0.40", features = ["bundled"] }
