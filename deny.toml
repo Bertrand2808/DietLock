@@ -1,0 +1,41 @@
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+]
+
+# Exceptions crate par crate : toute nouvelle dépendance hors liste fait échouer la CI.
+[[licenses.exceptions]]
+# Tiré par tauri-utils et wry, via dom_query.
+crate = "cssparser"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+# Tiré par tauri-utils et wry, via cssparser.
+crate = "cssparser-macros"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+# Tiré par tauri-utils et wry, via cssparser.
+crate = "dtoa-short"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+# Tiré par tauri-utils et wry, via dom_query.
+crate = "selectors"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+# Tiré par tauri, via dirs puis dirs-sys.
+crate = "option-ext"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+# Tiré par les bindings GTK (Linux), via system-deps puis cfg-expr.
+crate = "target-lexicon"
+allow = ["Apache-2.0 WITH LLVM-exception"]

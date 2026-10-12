@@ -1,0 +1,5 @@
+# Version figée : un nouveau lint clippy ne doit pas casser la CI sans changement de code.
+# Mise à jour par une PR dédiée.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
