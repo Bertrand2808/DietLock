@@ -8,5 +8,5 @@ publish = false
 
 [dependencies]
 dietlock-core = { path = "../dietlock-core" }
-# `bundled` : SQLite compilée avec la crate, indépendante de celle de la machine.
+# `bundled`: SQLite compiled with the crate, independent of the machine's copy.
 rusqlite = { version = "0.40", features = ["bundled"] }

@@ -1,29 +1,29 @@
-//! Logique métier pure de DietLock : aucune dépendance à Tauri, à SQLite ni à l'horloge.
+//! Pure business logic of DietLock: no dependency on Tauri, SQLite or the clock.
 
 use std::fmt;
 
 use time::{Date, Month};
 
-/// Nom de l'application.
+/// Application name.
 pub fn app_name() -> &'static str {
     "DietLock"
 }
 
-/// Poids minimal accepté, en dixièmes de kg (30,0 kg).
+/// Minimum accepted weight, in tenths of a kg (30.0 kg).
 pub const WEIGHT_TENTH_KG_MIN: u16 = 300;
-/// Poids maximal accepté, en dixièmes de kg (250,0 kg).
+/// Maximum accepted weight, in tenths of a kg (250.0 kg).
 pub const WEIGHT_TENTH_KG_MAX: u16 = 2500;
-/// Valeur maximale d'une macro, en grammes.
+/// Maximum value of a macro, in grams.
 pub const MACRO_G_MAX: u16 = 1000;
-/// Eau maximale, en millilitres.
+/// Maximum water, in millilitres.
 pub const WATER_ML_MAX: u16 = 10_000;
 
-/// Erreur de validation d'une saisie.
+/// Input validation error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationError {
-    /// Date absente du calendrier ou hors du format strict `YYYY-MM-DD`.
+    /// Date not in the calendar, or not in the strict `YYYY-MM-DD` format.
     InvalidDate(String),
-    /// Valeur hors de sa plage autorisée.
+    /// Value outside its allowed range.
     OutOfRange {
         field: &'static str,
         value: i64,
@@ -35,25 +35,25 @@ pub enum ValidationError {
 impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidDate(s) => write!(f, "date invalide : {s:?} (attendu YYYY-MM-DD)"),
+            Self::InvalidDate(s) => write!(f, "invalid date: {s:?} (expected YYYY-MM-DD)"),
             Self::OutOfRange {
                 field,
                 value,
                 min,
                 max,
-            } => write!(f, "{field} = {value} hors plage [{min}, {max}]"),
+            } => write!(f, "{field} = {value} out of range [{min}, {max}]"),
         }
     }
 }
 
 impl std::error::Error for ValidationError {}
 
-/// Jour calendaire, sans heure ni fuseau.
+/// Calendar day, without time or time zone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Day(Date);
 
 impl Day {
-    /// Lit une date au format strict `YYYY-MM-DD` (année sur 4 chiffres, zéros obligatoires).
+    /// Parses a date in the strict `YYYY-MM-DD` format (4-digit year, zero-padded).
     pub fn parse(s: &str) -> Result<Self, ValidationError> {
         let err = || ValidationError::InvalidDate(s.to_owned());
         let b = s.as_bytes();
@@ -110,7 +110,7 @@ fn check_range(field: &'static str, value: u16, min: u16, max: u16) -> Result<()
     }
 }
 
-/// Pesée d'un jour.
+/// Weigh-in of a day.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WeighIn {
     date: Day,
@@ -146,7 +146,7 @@ impl WeighIn {
     }
 }
 
-/// Alimentation d'un jour.
+/// Intake of a day.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Intake {
     date: Day,
@@ -232,7 +232,7 @@ mod tests {
             "2026-10-08 ",
             "",
         ] {
-            assert!(Day::parse(s).is_err(), "{s:?} devrait être refusée");
+            assert!(Day::parse(s).is_err(), "{s:?} should be refused");
         }
     }
 

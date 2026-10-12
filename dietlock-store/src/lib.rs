@@ -1,7 +1,7 @@
-//! Persistance SQLite de DietLock : pesées et alimentations, une ligne par jour.
+//! SQLite persistence for DietLock: weigh-ins and intakes, one row per day.
 //!
-//! Les plages sont vérifiées deux fois : par les types de `dietlock-core` et par des
-//! contraintes `CHECK` dans la base.
+//! Ranges are checked twice: by the `dietlock-core` types and by
+//! `CHECK` constraints in the database.
 
 use std::fmt;
 use std::path::Path;
@@ -9,7 +9,7 @@ use std::path::Path;
 use dietlock_core::{Day, Intake, ValidationError, WeighIn};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-/// Version du schéma, stockée dans `PRAGMA user_version`.
+/// Schema version, stored in `PRAGMA user_version`.
 pub const SCHEMA_VERSION: i32 = 1;
 
 const SCHEMA_V1: &str = "
@@ -28,22 +28,22 @@ CREATE TABLE intake (
 PRAGMA user_version = 1;
 ";
 
-/// Erreur d'accès à la base.
+/// Database access error.
 #[derive(Debug)]
 pub enum StoreError {
     Sqlite(rusqlite::Error),
-    /// Schéma plus récent que cette version de l'application.
+    /// Schema newer than this version of the application.
     UnsupportedSchemaVersion(i32),
-    /// Ligne lue en base qui ne passe pas la validation des types.
+    /// Row read from the database that fails type validation.
     InvalidRow(ValidationError),
 }
 
 impl fmt::Display for StoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Sqlite(e) => write!(f, "erreur SQLite : {e}"),
-            Self::UnsupportedSchemaVersion(v) => write!(f, "version de schéma inconnue : {v}"),
-            Self::InvalidRow(e) => write!(f, "ligne invalide en base : {e}"),
+            Self::Sqlite(e) => write!(f, "SQLite error: {e}"),
+            Self::UnsupportedSchemaVersion(v) => write!(f, "unknown schema version: {v}"),
+            Self::InvalidRow(e) => write!(f, "invalid row in database: {e}"),
         }
     }
 }
@@ -59,7 +59,7 @@ impl From<rusqlite::Error> for StoreError {
 /// Erreur d'enregistrement.
 #[derive(Debug)]
 pub enum SaveError<T> {
-    /// La date est déjà remplie ; contient la valeur existante.
+    /// The date is already filled; holds the existing value.
     AlreadyFilled(T),
     Store(StoreError),
 }
@@ -67,7 +67,7 @@ pub enum SaveError<T> {
 impl<T: fmt::Debug> fmt::Display for SaveError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::AlreadyFilled(old) => write!(f, "déjà rempli : {old:?}"),
+            Self::AlreadyFilled(old) => write!(f, "already filled: {old:?}"),
             Self::Store(e) => e.fmt(f),
         }
     }
@@ -93,12 +93,12 @@ pub struct Store {
 }
 
 impl Store {
-    /// Ouvre (ou crée) la base au chemin donné.
+    /// Opens (or creates) the database at the given path.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StoreError> {
         Self::init(Connection::open(path)?)
     }
 
-    /// Ouvre une base en mémoire.
+    /// Opens an in-memory database.
     pub fn open_in_memory() -> Result<Self, StoreError> {
         Self::init(Connection::open_in_memory()?)
     }
@@ -120,8 +120,8 @@ impl Store {
         &self.conn
     }
 
-    /// Enregistre une pesée. Si la date est déjà remplie et que `replace` est faux,
-    /// renvoie [`SaveError::AlreadyFilled`] avec l'ancienne pesée.
+    /// Saves a weigh-in. If the date is already filled and `replace` is false,
+    /// returns [`SaveError::AlreadyFilled`] with the previous weigh-in.
     pub fn save_weigh_in(&mut self, w: &WeighIn, replace: bool) -> Result<(), SaveError<WeighIn>> {
         let tx = self.conn.transaction()?;
         if !replace && let Some(old) = get_weigh_in(&tx, w.date())? {
@@ -139,7 +139,7 @@ impl Store {
         get_weigh_in(&self.conn, date)
     }
 
-    /// Pesées de `from` à `to` inclus, par date croissante.
+    /// Weigh-ins from `from` to `to` inclusive, in ascending date order.
     pub fn list_weigh_ins(&self, from: Day, to: Day) -> Result<Vec<WeighIn>, StoreError> {
         let mut stmt = self.conn.prepare(
             "SELECT date, weight_tenth_kg, fasted FROM weigh_in
@@ -149,15 +149,15 @@ impl Store {
         rows.map(|r| to_weigh_in(r?)).collect()
     }
 
-    /// Supprime la pesée du jour ; sans effet si elle n'existe pas.
+    /// Deletes the day's weigh-in; no-op if there is none.
     pub fn delete_weigh_in(&self, date: Day) -> Result<(), StoreError> {
         self.conn
             .execute("DELETE FROM weigh_in WHERE date = ?1", [date.to_string()])?;
         Ok(())
     }
 
-    /// Enregistre une alimentation. Si la date est déjà remplie et que `replace` est
-    /// faux, renvoie [`SaveError::AlreadyFilled`] avec l'ancienne alimentation.
+    /// Saves an intake. If the date is already filled and `replace` is
+    /// false, returns [`SaveError::AlreadyFilled`] with the previous intake.
     pub fn save_intake(&mut self, i: &Intake, replace: bool) -> Result<(), SaveError<Intake>> {
         let tx = self.conn.transaction()?;
         if !replace && let Some(old) = get_intake(&tx, i.date())? {
@@ -182,7 +182,7 @@ impl Store {
         get_intake(&self.conn, date)
     }
 
-    /// Alimentations de `from` à `to` inclus, par date croissante.
+    /// Intakes from `from` to `to` inclusive, in ascending date order.
     pub fn list_intakes(&self, from: Day, to: Day) -> Result<Vec<Intake>, StoreError> {
         let mut stmt = self.conn.prepare(
             "SELECT date, protein_g, carbs_g, fat_g, water_ml FROM intake
@@ -192,7 +192,7 @@ impl Store {
         rows.map(|r| to_intake(r?)).collect()
     }
 
-    /// Supprime l'alimentation du jour ; sans effet si elle n'existe pas.
+    /// Deletes the day's intake; no-op if there is none.
     pub fn delete_intake(&self, date: Day) -> Result<(), StoreError> {
         self.conn
             .execute("DELETE FROM intake WHERE date = ?1", [date.to_string()])?;
@@ -281,7 +281,7 @@ mod tests {
         s.save_weigh_in(&first, false).unwrap();
         match s.save_weigh_in(&second, false) {
             Err(SaveError::AlreadyFilled(old)) => assert_eq!(old, first),
-            other => panic!("attendu AlreadyFilled, obtenu {other:?}"),
+            other => panic!("expected AlreadyFilled, got {other:?}"),
         }
         assert_eq!(s.get_weigh_in(day("2026-10-13")).unwrap(), Some(first));
         s.save_weigh_in(&second, true).unwrap();
@@ -296,7 +296,7 @@ mod tests {
         s.save_intake(&first, false).unwrap();
         match s.save_intake(&second, false) {
             Err(SaveError::AlreadyFilled(old)) => assert_eq!(old, first),
-            other => panic!("attendu AlreadyFilled, obtenu {other:?}"),
+            other => panic!("expected AlreadyFilled, got {other:?}"),
         }
         s.save_intake(&second, true).unwrap();
         assert_eq!(s.get_intake(day("2026-10-12")).unwrap(), Some(second));
