@@ -2,7 +2,7 @@
 
 /// Nom de l'application.
 pub fn app_name() -> &'static str {
-    "DietLock"
+    return "DietLock";
 }
 
 #[cfg(test)]
