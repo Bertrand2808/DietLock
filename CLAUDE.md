@@ -2,12 +2,14 @@
 
 Toolchain pinned to Rust 1.99.0 in `rust-toolchain.toml` (rustup installs it automatically). Edition 2024.
 
-- Format check: `cargo fmt --all --check`
-- Lint (warnings are errors): `cargo clippy --all-targets -- -D warnings`
-- All tests: `cargo test`
-- One crate: `cargo test -p dietlock-core` (or `-p dietlock-store`, `-p dietlock`)
-- One test: `cargo test -p dietlock-core weight_bounds` (substring match on test name)
-- Licence check (CI, Linux only): `cargo deny check licenses` (requires `cargo-deny` installed locally)
+```bash
+cargo fmt --all --check # Format
+cargo clippy --all-targets -- -D warnings # Lint (warnings are errors)
+cargo test # All tests
+cargo test -p dietlock-core # (or `-p dietlock-store`, `-p dietlock`) One crate
+cargo test -p dietlock-core weight_bounds # (substring match on test name)  One test
+cargo deny check licenses # (requires cargo-deny installed locally)  Licence check
+```
 
 CI (`.github/workflows/ci.yml`) runs fmt, clippy, and test on macOS, Windows and Ubuntu, then cargo-deny on Linux. Run the first three locally before pushing.
 
@@ -27,7 +29,8 @@ There is no runnable UI yet: `src/index.html` is an empty stub and `src-tauri/sr
 
 ### Business rules
 
-Read `.claude/rules/metier.md` before changing any behaviour. It is the source of truth for the business rules. `CONTEXT.md` holds the ubiquitous language: use its terms in code and docs. Rules have IDs (S1–S10 input, D1–D8 dates, T1–T8 trend, A1–A6 alerts). Reference the ID in code comments and test names when implementing one. The trend (7-day mean, minimum 4 valid weigh-ins) and alert (±3 kg vs previous day's trend) logic are specified but not yet implemented.
+- Read `.claude/rules/metier.md` before changing any behaviour. It is the source of truth for the business rules.
+- `CONTEXT.md` holds the ubiquitous language: use its terms in code and docs.
 
 ## Conventions
 
