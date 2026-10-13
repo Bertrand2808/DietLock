@@ -72,12 +72,11 @@ pub(crate) fn delete_intake(conn: &Connection, date: Day) -> Result<(), StoreErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Store;
     use crate::tests::{day, intake, store};
 
     #[test]
     fn second_intake_needs_replace() {
-        let mut s: Store = store();
+        let mut s = store();
         let first = intake("2026-10-12", Some(1500));
         let second = intake("2026-10-12", None);
         s.save_intake(&first, false).unwrap();
@@ -91,7 +90,7 @@ mod tests {
 
     #[test]
     fn intake_without_water_reads_none() {
-        let mut s: Store = store();
+        let mut s = store();
         s.save_intake(&intake("2026-10-12", None), false).unwrap();
         let got = s.get_intake(day("2026-10-12")).unwrap().unwrap();
         assert_eq!(got.water_ml(), None);

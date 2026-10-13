@@ -65,7 +65,6 @@ pub(crate) fn delete_weigh_in(conn: &Connection, date: Day) -> Result<(), StoreE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Store;
     use crate::tests::{day, store, weigh};
 
     #[test]
@@ -80,7 +79,7 @@ mod tests {
 
     #[test]
     fn second_weigh_in_needs_replace() {
-        let mut s: Store = store();
+        let mut s = store();
         let first = weigh("2026-10-13", 826, true);
         let second = weigh("2026-10-13", 830, false);
         s.save_weigh_in(&first, false).unwrap();
