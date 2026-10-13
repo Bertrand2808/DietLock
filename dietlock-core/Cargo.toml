@@ -7,3 +7,5 @@ repository.workspace = true
 publish = false
 
 [dependencies]
+# Sans `local-offset` ni `std` : aucun accès à l'horloge ni au fuseau local.
+time = { version = "0.3", default-features = false }
