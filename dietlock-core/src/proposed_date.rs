@@ -2,6 +2,8 @@
 //! the current day and time are passed in by the caller.
 
 use crate::day::Day;
+use time::Time;
+
 use crate::error::{ValidationError, check_range};
 
 /// Hour from which D8 applies (inclusive) and before which the intake goes to J-1.
@@ -37,17 +39,17 @@ pub fn proposed_weigh_in_date(today: Day) -> Day {
 
 /// D2-D3 and D8: date proposed for an intake.
 ///
-/// `hour` and `minute` are the current local time; only `hour` decides,
-/// since every boundary is on the hour.
+/// `now` is the current local time; a `Time` is always valid, so an
+/// impossible hour such as 24:00 cannot reach this function.
 pub fn proposed_intake_date(
     today: Day,
-    hour: u8,
-    _minute: u8,
+    now: Time,
     rollover: RolloverHour,
     yesterday_has_intake: bool,
     today_has_intake: bool,
 ) -> Day {
     let yesterday = today.previous().unwrap_or(today);
+    let hour = now.hour();
     let before_rollover = hour < rollover.hour();
     let d8_applies = hour < NOON && !yesterday_has_intake && !today_has_intake;
     if before_rollover || d8_applies {
@@ -74,8 +76,12 @@ mod tests {
     const TUESDAY: &str = "2026-10-13";
     const MONDAY: &str = "2026-10-12";
 
+    fn time(h: u8, m: u8) -> Time {
+        Time::from_hms(h, m, 0).unwrap()
+    }
+
     fn at(h: u8, m: u8, mon: bool, tue: bool) -> Day {
-        proposed_intake_date(day(TUESDAY), h, m, RolloverHour::default(), mon, tue)
+        proposed_intake_date(day(TUESDAY), time(h, m), RolloverHour::default(), mon, tue)
     }
 
     #[test]
@@ -107,6 +113,13 @@ mod tests {
     }
 
     #[test]
+    fn impossible_time_cannot_be_built() {
+        assert!(Time::from_hms(24, 0, 0).is_err());
+        assert!(Time::from_hms(99, 99, 0).is_err());
+        assert!(Time::from_hms(12, 60, 0).is_err());
+    }
+
+    #[test]
     fn rollover_range() {
         assert_eq!(RolloverHour::default().hour(), 4);
         assert!(RolloverHour::new(0).is_ok());
@@ -117,7 +130,7 @@ mod tests {
     #[test]
     fn rollover_zero_goes_straight_to_d8() {
         let r = RolloverHour::new(0).unwrap();
-        let p = proposed_intake_date(day(TUESDAY), 0, 0, r, false, false);
+        let p = proposed_intake_date(day(TUESDAY), time(0, 0), r, false, false);
         assert_eq!(p, day(MONDAY));
     }
 
