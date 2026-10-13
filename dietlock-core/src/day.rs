@@ -44,6 +44,13 @@ impl Day {
     pub fn previous(self) -> Option<Self> {
         self.0.previous_day().map(Self)
     }
+
+    /// The day `days` calendar days earlier, or `None` below the calendar bound.
+    pub fn minus_days(self, days: u16) -> Option<Self> {
+        self.0
+            .checked_sub(time::Duration::days(i64::from(days)))
+            .map(Self)
+    }
 }
 
 impl fmt::Display for Day {

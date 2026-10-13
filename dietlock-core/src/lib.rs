@@ -6,6 +6,7 @@ mod error;
 mod input;
 mod intake;
 mod proposed_date;
+mod trend;
 mod weigh_in;
 
 pub use day::Day;
@@ -17,6 +18,7 @@ pub use proposed_date::{
     IntakePresence, ProposedIntake, SwitchHour, check_not_future, proposed_intake_date,
     proposed_weigh_in_date,
 };
+pub use trend::{TREND_MIN_WEIGH_INS, TREND_WINDOW_DAYS, display_tenth_kg, trend, variation};
 pub use weigh_in::{WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn};
 
 /// Application name.
