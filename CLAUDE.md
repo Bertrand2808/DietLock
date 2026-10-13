@@ -17,7 +17,7 @@ There is no runnable UI yet: `src/index.html` is an empty stub and `src-tauri/sr
 
 ## Architecture
 
-- **`dietlock-core`**: pure business logic. No Tauri, no SQLite, no clock. `Day` (strict `YYYY-MM-DD`), `WeighIn`, `Intake` are constructed through validating `new()` functions. "Today" must be passed in by the caller. Files: `error.rs` (`ValidationError`, `check_range`), `day.rs`, `weigh_in.rs`, `intake.rs`; `lib.rs` only declares modules and re-exports.
+- **`dietlock-core`**: pure business logic. No Tauri, no SQLite, no clock. `Day` (strict `YYYY-MM-DD`), `WeighIn`, `Intake` are constructed through validating `new()` functions. "Today" must be passed in by the caller. Files: `error.rs` (`ValidationError`, `check_range`), `day.rs`, `weigh_in.rs`, `intake.rs`, `input.rs` (text parsing to integers, S6-S7), `energy.rs` (S8), `proposed_date.rs` (`SwitchHour`, proposed dates D1-D3 and D8, `check_not_future` D5); `lib.rs` only declares modules and re-exports.
 - **`dietlock-store`**: SQLite persistence via `rusqlite` (bundled). `Store` owns one connection, one row per date in `weigh_in` and `intake` tables. `save_*` takes a `replace` flag: when false and the date is filled, it returns `SaveError::AlreadyFilled(old)` so the caller can ask for confirmation (rule S3). Files: `lib.rs` (`Store`, thin delegating methods), `error.rs` (`StoreError`, `SaveError`), `schema.rs` (`SCHEMA_V1`, `migrate`), `weigh_in.rs` and `intake.rs` (SQL and row mapping as free functions on `&Connection`).
 - **`src-tauri` (lib `dietlock_lib`)**: Tauri shell. `main.rs` only calls `dietlock_lib::run()`. This is where IPC commands will go once they exist; `frontendDist` points at `../src`.
 

@@ -39,6 +39,11 @@ impl Day {
             .map(Self)
             .map_err(|_| err())
     }
+
+    /// The day before, or `None` at the lower bound of the calendar.
+    pub fn previous(self) -> Option<Self> {
+        self.0.previous_day().map(Self)
+    }
 }
 
 impl fmt::Display for Day {

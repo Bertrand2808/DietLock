@@ -12,6 +12,10 @@ pub enum ValidationError {
         min: i64,
         max: i64,
     },
+    /// Text that is not a number in the expected format.
+    InvalidNumber { field: &'static str, input: String },
+    /// Date later than the current day.
+    FutureDate(String),
 }
 
 impl fmt::Display for ValidationError {
@@ -24,6 +28,10 @@ impl fmt::Display for ValidationError {
                 min,
                 max,
             } => write!(f, "{field} = {value} out of range [{min}, {max}]"),
+            Self::InvalidNumber { field, input } => {
+                write!(f, "{field}: invalid number {input:?}")
+            }
+            Self::FutureDate(d) => write!(f, "date {d} is in the future"),
         }
     }
 }
@@ -32,18 +40,19 @@ impl std::error::Error for ValidationError {}
 
 pub(crate) fn check_range(
     field: &'static str,
-    value: u16,
-    min: u16,
-    max: u16,
+    value: impl Into<i64>,
+    min: impl Into<i64>,
+    max: impl Into<i64>,
 ) -> Result<(), ValidationError> {
+    let (value, min, max) = (value.into(), min.into(), max.into());
     if (min..=max).contains(&value) {
         Ok(())
     } else {
         Err(ValidationError::OutOfRange {
             field,
-            value: value.into(),
-            min: min.into(),
-            max: max.into(),
+            value,
+            min,
+            max,
         })
     }
 }
