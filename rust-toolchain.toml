@@ -1,5 +1,5 @@
-# Version figée : un nouveau lint clippy ne doit pas casser la CI sans changement de code.
-# Mise à jour par une PR dédiée.
+# Pinned version: a new clippy lint must not break CI without a code change.
+# Updated in a dedicated PR.
 [toolchain]
 channel = "1.99.0"
 components = ["clippy", "rustfmt"]
