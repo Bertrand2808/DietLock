@@ -14,7 +14,8 @@ pub use error::ValidationError;
 pub use input::{parse_macro_g, parse_water_ml, parse_weight_tenth_kg};
 pub use intake::{Intake, MACRO_G_MAX, WATER_ML_MAX};
 pub use proposed_date::{
-    RolloverHour, check_not_future, proposed_intake_date, proposed_weigh_in_date,
+    IntakePresence, ProposedIntake, SwitchHour, check_not_future, proposed_intake_date,
+    proposed_weigh_in_date,
 };
 pub use weigh_in::{WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn};
 

@@ -1,6 +1,6 @@
 use crate::intake::Intake;
 
-/// Energy of an intake, in kcal: 4 per g of protein and carbs, 9 per g of fat.
+/// S8: energy of an intake, in kcal: 4 per g of protein and carbs, 9 per g of fat.
 /// Water is not counted. Never stored: always recomputed from the macros.
 pub fn energy_kcal(intake: &Intake) -> u32 {
     4 * u32::from(intake.protein_g())
@@ -14,7 +14,7 @@ mod tests {
     use crate::tests::day;
 
     #[test]
-    fn energy_of_macros() {
+    fn s8_energy_of_macros() {
         let d = day("2026-10-13");
         let i = Intake::new(d, 150, 250, 70, Some(1500)).unwrap();
         assert_eq!(energy_kcal(&i), 2230);
@@ -23,7 +23,7 @@ mod tests {
     }
 
     #[test]
-    fn energy_max_fits() {
+    fn s8_energy_max_fits() {
         let i = Intake::new(day("2026-10-13"), 1000, 1000, 1000, None).unwrap();
         assert_eq!(energy_kcal(&i), 17_000);
     }
