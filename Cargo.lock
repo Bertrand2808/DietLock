@@ -576,6 +576,7 @@ dependencies = [
  "serde",
  "tauri",
  "tauri-build",
+ "time",
 ]
 
 [[package]]

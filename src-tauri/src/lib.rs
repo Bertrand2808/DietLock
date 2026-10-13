@@ -23,7 +23,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::save_weigh_in,
-            commands::list_weigh_ins
+            commands::save_intake,
+            commands::proposed_intake_date,
+            commands::list_days
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
