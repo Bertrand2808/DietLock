@@ -3,91 +3,20 @@
 //! Ranges are checked twice: by the `dietlock-core` types and by
 //! `CHECK` constraints in the database.
 
-use std::fmt;
+mod error;
+mod intake;
+mod schema;
+mod weigh_in;
+
 use std::path::Path;
 
-use dietlock_core::{Day, Intake, ValidationError, WeighIn};
-use rusqlite::{Connection, OptionalExtension, Row, params};
+use dietlock_core::{Day, Intake, WeighIn};
+use rusqlite::Connection;
 
-/// Schema version, stored in `PRAGMA user_version`.
-pub const SCHEMA_VERSION: i32 = 1;
+pub use error::{SaveError, StoreError};
+pub use schema::SCHEMA_VERSION;
 
-const SCHEMA_V1: &str = "
-CREATE TABLE weigh_in (
-    date            TEXT    PRIMARY KEY NOT NULL CHECK (date(date) IS date),
-    weight_tenth_kg INTEGER NOT NULL CHECK (weight_tenth_kg BETWEEN 300 AND 2500),
-    fasted          INTEGER NOT NULL CHECK (fasted IN (0, 1))
-) STRICT;
-CREATE TABLE intake (
-    date      TEXT    PRIMARY KEY NOT NULL CHECK (date(date) IS date),
-    protein_g INTEGER NOT NULL CHECK (protein_g BETWEEN 0 AND 1000),
-    carbs_g   INTEGER NOT NULL CHECK (carbs_g BETWEEN 0 AND 1000),
-    fat_g     INTEGER NOT NULL CHECK (fat_g BETWEEN 0 AND 1000),
-    water_ml  INTEGER CHECK (water_ml IS NULL OR water_ml BETWEEN 0 AND 10000)
-) STRICT;
-PRAGMA user_version = 1;
-";
-
-/// Database access error.
-#[derive(Debug)]
-pub enum StoreError {
-    Sqlite(rusqlite::Error),
-    /// Schema newer than this version of the application.
-    UnsupportedSchemaVersion(i32),
-    /// Row read from the database that fails type validation.
-    InvalidRow(ValidationError),
-}
-
-impl fmt::Display for StoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Sqlite(e) => write!(f, "SQLite error: {e}"),
-            Self::UnsupportedSchemaVersion(v) => write!(f, "unknown schema version: {v}"),
-            Self::InvalidRow(e) => write!(f, "invalid row in database: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for StoreError {}
-
-impl From<rusqlite::Error> for StoreError {
-    fn from(e: rusqlite::Error) -> Self {
-        Self::Sqlite(e)
-    }
-}
-
-/// Erreur d'enregistrement.
-#[derive(Debug)]
-pub enum SaveError<T> {
-    /// The date is already filled; holds the existing value.
-    AlreadyFilled(T),
-    Store(StoreError),
-}
-
-impl<T: fmt::Debug> fmt::Display for SaveError<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AlreadyFilled(old) => write!(f, "already filled: {old:?}"),
-            Self::Store(e) => e.fmt(f),
-        }
-    }
-}
-
-impl<T: fmt::Debug> std::error::Error for SaveError<T> {}
-
-impl<T> From<StoreError> for SaveError<T> {
-    fn from(e: StoreError) -> Self {
-        Self::Store(e)
-    }
-}
-
-impl<T> From<rusqlite::Error> for SaveError<T> {
-    fn from(e: rusqlite::Error) -> Self {
-        Self::Store(e.into())
-    }
-}
-
-/// Base DietLock.
+/// SQLite-backed store for DietLock data.
 pub struct Store {
     conn: Connection,
 }
@@ -104,14 +33,7 @@ impl Store {
     }
 
     fn init(mut conn: Connection) -> Result<Self, StoreError> {
-        let tx = conn.transaction()?;
-        let version: i32 = tx.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        match version {
-            0 => tx.execute_batch(SCHEMA_V1)?,
-            SCHEMA_VERSION => {}
-            v => return Err(StoreError::UnsupportedSchemaVersion(v)),
-        }
-        tx.commit()?;
+        schema::migrate(&mut conn)?;
         Ok(Self { conn })
     }
 
@@ -124,207 +46,67 @@ impl Store {
     /// returns [`SaveError::AlreadyFilled`] with the previous weigh-in.
     pub fn save_weigh_in(&mut self, w: &WeighIn, replace: bool) -> Result<(), SaveError<WeighIn>> {
         let tx = self.conn.transaction()?;
-        if !replace && let Some(old) = get_weigh_in(&tx, w.date())? {
-            return Err(SaveError::AlreadyFilled(old));
-        }
-        tx.execute(
-            "INSERT OR REPLACE INTO weigh_in (date, weight_tenth_kg, fasted) VALUES (?1, ?2, ?3)",
-            params![w.date().to_string(), w.weight_tenth_kg(), w.fasted()],
-        )?;
+        weigh_in::save_weigh_in(&tx, w, replace)?;
         tx.commit()?;
         Ok(())
     }
 
     pub fn get_weigh_in(&self, date: Day) -> Result<Option<WeighIn>, StoreError> {
-        get_weigh_in(&self.conn, date)
+        weigh_in::get_weigh_in(&self.conn, date)
     }
 
     /// Weigh-ins from `from` to `to` inclusive, in ascending date order.
     pub fn list_weigh_ins(&self, from: Day, to: Day) -> Result<Vec<WeighIn>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT date, weight_tenth_kg, fasted FROM weigh_in
-             WHERE date BETWEEN ?1 AND ?2 ORDER BY date",
-        )?;
-        let rows = stmt.query_map(params![from.to_string(), to.to_string()], raw_weigh_in)?;
-        rows.map(|r| to_weigh_in(r?)).collect()
+        weigh_in::list_weigh_ins(&self.conn, from, to)
     }
 
     /// Deletes the day's weigh-in; no-op if there is none.
     pub fn delete_weigh_in(&self, date: Day) -> Result<(), StoreError> {
-        self.conn
-            .execute("DELETE FROM weigh_in WHERE date = ?1", [date.to_string()])?;
-        Ok(())
+        weigh_in::delete_weigh_in(&self.conn, date)
     }
 
     /// Saves an intake. If the date is already filled and `replace` is
     /// false, returns [`SaveError::AlreadyFilled`] with the previous intake.
     pub fn save_intake(&mut self, i: &Intake, replace: bool) -> Result<(), SaveError<Intake>> {
         let tx = self.conn.transaction()?;
-        if !replace && let Some(old) = get_intake(&tx, i.date())? {
-            return Err(SaveError::AlreadyFilled(old));
-        }
-        tx.execute(
-            "INSERT OR REPLACE INTO intake (date, protein_g, carbs_g, fat_g, water_ml)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                i.date().to_string(),
-                i.protein_g(),
-                i.carbs_g(),
-                i.fat_g(),
-                i.water_ml()
-            ],
-        )?;
+        intake::save_intake(&tx, i, replace)?;
         tx.commit()?;
         Ok(())
     }
 
     pub fn get_intake(&self, date: Day) -> Result<Option<Intake>, StoreError> {
-        get_intake(&self.conn, date)
+        intake::get_intake(&self.conn, date)
     }
 
     /// Intakes from `from` to `to` inclusive, in ascending date order.
     pub fn list_intakes(&self, from: Day, to: Day) -> Result<Vec<Intake>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT date, protein_g, carbs_g, fat_g, water_ml FROM intake
-             WHERE date BETWEEN ?1 AND ?2 ORDER BY date",
-        )?;
-        let rows = stmt.query_map(params![from.to_string(), to.to_string()], raw_intake)?;
-        rows.map(|r| to_intake(r?)).collect()
+        intake::list_intakes(&self.conn, from, to)
     }
 
     /// Deletes the day's intake; no-op if there is none.
     pub fn delete_intake(&self, date: Day) -> Result<(), StoreError> {
-        self.conn
-            .execute("DELETE FROM intake WHERE date = ?1", [date.to_string()])?;
-        Ok(())
+        intake::delete_intake(&self.conn, date)
     }
-}
-
-type RawWeighIn = (String, u16, bool);
-type RawIntake = (String, u16, u16, u16, Option<u16>);
-
-fn raw_weigh_in(r: &Row<'_>) -> rusqlite::Result<RawWeighIn> {
-    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-}
-
-fn raw_intake(r: &Row<'_>) -> rusqlite::Result<RawIntake> {
-    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
-}
-
-fn to_weigh_in((d, w, f): RawWeighIn) -> Result<WeighIn, StoreError> {
-    let day = Day::parse(&d).map_err(StoreError::InvalidRow)?;
-    WeighIn::new(day, w, f).map_err(StoreError::InvalidRow)
-}
-
-fn to_intake((d, p, c, f, w): RawIntake) -> Result<Intake, StoreError> {
-    let day = Day::parse(&d).map_err(StoreError::InvalidRow)?;
-    Intake::new(day, p, c, f, w).map_err(StoreError::InvalidRow)
-}
-
-fn get_weigh_in(conn: &Connection, date: Day) -> Result<Option<WeighIn>, StoreError> {
-    conn.query_row(
-        "SELECT date, weight_tenth_kg, fasted FROM weigh_in WHERE date = ?1",
-        [date.to_string()],
-        raw_weigh_in,
-    )
-    .optional()?
-    .map(to_weigh_in)
-    .transpose()
-}
-
-fn get_intake(conn: &Connection, date: Day) -> Result<Option<Intake>, StoreError> {
-    conn.query_row(
-        "SELECT date, protein_g, carbs_g, fat_g, water_ml FROM intake WHERE date = ?1",
-        [date.to_string()],
-        raw_intake,
-    )
-    .optional()?
-    .map(to_intake)
-    .transpose()
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn day(s: &str) -> Day {
+    pub(crate) fn day(s: &str) -> Day {
         Day::parse(s).unwrap()
     }
 
-    fn store() -> Store {
+    pub(crate) fn store() -> Store {
         Store::open_in_memory().unwrap()
     }
 
-    fn weigh(d: &str, w: u16, fasted: bool) -> WeighIn {
+    pub(crate) fn weigh(d: &str, w: u16, fasted: bool) -> WeighIn {
         WeighIn::new(day(d), w, fasted).unwrap()
     }
 
-    fn intake(d: &str, water: Option<u16>) -> Intake {
+    pub(crate) fn intake(d: &str, water: Option<u16>) -> Intake {
         Intake::new(day(d), 150, 200, 70, water).unwrap()
-    }
-
-    #[test]
-    fn weigh_in_round_trip() {
-        let mut s = store();
-        s.save_weigh_in(&weigh("2026-10-13", 826, true), false)
-            .unwrap();
-        let got = s.get_weigh_in(day("2026-10-13")).unwrap().unwrap();
-        assert_eq!(got.weight_tenth_kg(), 826);
-        assert!(got.fasted());
-    }
-
-    #[test]
-    fn second_weigh_in_needs_replace() {
-        let mut s = store();
-        let first = weigh("2026-10-13", 826, true);
-        let second = weigh("2026-10-13", 830, false);
-        s.save_weigh_in(&first, false).unwrap();
-        match s.save_weigh_in(&second, false) {
-            Err(SaveError::AlreadyFilled(old)) => assert_eq!(old, first),
-            other => panic!("expected AlreadyFilled, got {other:?}"),
-        }
-        assert_eq!(s.get_weigh_in(day("2026-10-13")).unwrap(), Some(first));
-        s.save_weigh_in(&second, true).unwrap();
-        assert_eq!(s.get_weigh_in(day("2026-10-13")).unwrap(), Some(second));
-    }
-
-    #[test]
-    fn second_intake_needs_replace() {
-        let mut s = store();
-        let first = intake("2026-10-12", Some(1500));
-        let second = intake("2026-10-12", None);
-        s.save_intake(&first, false).unwrap();
-        match s.save_intake(&second, false) {
-            Err(SaveError::AlreadyFilled(old)) => assert_eq!(old, first),
-            other => panic!("expected AlreadyFilled, got {other:?}"),
-        }
-        s.save_intake(&second, true).unwrap();
-        assert_eq!(s.get_intake(day("2026-10-12")).unwrap(), Some(second));
-    }
-
-    #[test]
-    fn intake_without_water_reads_none() {
-        let mut s = store();
-        s.save_intake(&intake("2026-10-12", None), false).unwrap();
-        let got = s.get_intake(day("2026-10-12")).unwrap().unwrap();
-        assert_eq!(got.water_ml(), None);
-        let raw: Option<i64> = s
-            .conn()
-            .query_row("SELECT water_ml FROM intake", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(raw, None);
-    }
-
-    #[test]
-    fn weigh_in_and_intake_are_independent() {
-        let mut s = store();
-        s.save_weigh_in(&weigh("2026-10-13", 826, true), false)
-            .unwrap();
-        assert_eq!(s.get_intake(day("2026-10-13")).unwrap(), None);
-        s.save_intake(&intake("2026-10-14", None), false).unwrap();
-        assert_eq!(s.get_weigh_in(day("2026-10-14")).unwrap(), None);
-        s.save_intake(&intake("2026-10-13", None), false).unwrap();
-        assert!(s.get_weigh_in(day("2026-10-13")).unwrap().is_some());
     }
 
     #[test]
@@ -341,6 +123,18 @@ mod tests {
         s.delete_weigh_in(day("2026-10-13")).unwrap();
         assert_eq!(s.get_weigh_in(day("2026-10-13")).unwrap(), None);
         assert_eq!(s.get_intake(day("2026-10-13")).unwrap(), Some(i));
+    }
+
+    #[test]
+    fn weigh_in_and_intake_are_independent() {
+        let mut s = store();
+        s.save_weigh_in(&weigh("2026-10-13", 826, true), false)
+            .unwrap();
+        assert_eq!(s.get_intake(day("2026-10-13")).unwrap(), None);
+        s.save_intake(&intake("2026-10-14", None), false).unwrap();
+        assert_eq!(s.get_weigh_in(day("2026-10-14")).unwrap(), None);
+        s.save_intake(&intake("2026-10-13", None), false).unwrap();
+        assert!(s.get_weigh_in(day("2026-10-13")).unwrap().is_some());
     }
 
     #[test]
@@ -383,94 +177,5 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-    }
-
-    fn sql_refused(s: &Store, sql: &str) {
-        let err = s.conn().execute(sql, []).unwrap_err();
-        assert!(
-            err.to_string().contains("CHECK constraint failed"),
-            "{sql} : {err}"
-        );
-    }
-
-    #[test]
-    fn check_constraints_refuse_out_of_range() {
-        let s = store();
-        let ok_w = "INSERT INTO weigh_in VALUES ('2026-10-13', 826, 1)";
-        let ok_i = "INSERT INTO intake VALUES ('2026-10-12', 150, 200, 70, NULL)";
-        sql_refused(&s, "INSERT INTO weigh_in VALUES ('2026-10-13', 299, 1)");
-        sql_refused(&s, "INSERT INTO weigh_in VALUES ('2026-10-13', 2501, 1)");
-        sql_refused(&s, "INSERT INTO weigh_in VALUES ('2026-10-13', 826, 2)");
-        sql_refused(
-            &s,
-            "INSERT INTO intake VALUES ('2026-10-12', 1001, 0, 0, NULL)",
-        );
-        sql_refused(
-            &s,
-            "INSERT INTO intake VALUES ('2026-10-12', 0, 1001, 0, NULL)",
-        );
-        sql_refused(
-            &s,
-            "INSERT INTO intake VALUES ('2026-10-12', 0, 0, 1001, NULL)",
-        );
-        sql_refused(
-            &s,
-            "INSERT INTO intake VALUES ('2026-10-12', 0, 0, 0, 10001)",
-        );
-        sql_refused(&s, "INSERT INTO intake VALUES ('2026-10-12', 0, 0, 0, -1)");
-        for bad in ["2027-02-29", "2026-04-31", "2026-10-8"] {
-            sql_refused(
-                &s,
-                &format!("INSERT INTO weigh_in VALUES ('{bad}', 826, 1)"),
-            );
-            sql_refused(
-                &s,
-                &format!("INSERT INTO intake VALUES ('{bad}', 0, 0, 0, NULL)"),
-            );
-        }
-        s.conn().execute(ok_w, []).unwrap();
-        s.conn().execute(ok_i, []).unwrap();
-        s.conn()
-            .execute("INSERT INTO weigh_in VALUES ('2028-02-29', 826, 0)", [])
-            .unwrap();
-    }
-
-    #[test]
-    fn reopening_v1_file_keeps_data() {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let dir =
-            std::env::temp_dir().join(format!("dietlock-test-{}-{nanos}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("dietlock.sqlite");
-        let w = weigh("2026-10-13", 826, true);
-        let i = intake("2026-10-12", Some(1500));
-        {
-            let mut s = Store::open(&path).unwrap();
-            s.save_weigh_in(&w, false).unwrap();
-            s.save_intake(&i, false).unwrap();
-        }
-        let s = Store::open(&path).unwrap();
-        let version: i32 = s
-            .conn()
-            .query_row("PRAGMA user_version", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(version, SCHEMA_VERSION);
-        assert_eq!(s.get_weigh_in(day("2026-10-13")).unwrap(), Some(w));
-        assert_eq!(s.get_intake(day("2026-10-12")).unwrap(), Some(i));
-        drop(s);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn newer_schema_is_refused() {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("PRAGMA user_version = 2").unwrap();
-        assert!(matches!(
-            Store::init(conn),
-            Err(StoreError::UnsupportedSchemaVersion(2))
-        ));
     }
 }
