@@ -14,4 +14,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# `clock`: local date, read here so that dietlock-core stays clock-free.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+dietlock-core = { path = "../dietlock-core" }
+dietlock-store = { path = "../dietlock-store" }
+serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
