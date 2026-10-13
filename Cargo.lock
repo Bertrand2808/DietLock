@@ -570,6 +570,10 @@ dependencies = [
 name = "dietlock"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "dietlock-core",
+ "dietlock-store",
+ "serde",
  "tauri",
  "tauri-build",
 ]

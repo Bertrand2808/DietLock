@@ -13,13 +13,13 @@ cargo deny check licenses # (requires cargo-deny installed locally)  Licence che
 
 CI (`.github/workflows/ci.yml`) runs fmt, clippy, and test on macOS, Windows and Ubuntu, then cargo-deny on Linux. Run the first three locally before pushing.
 
-There is no runnable UI yet: `src/index.html` is an empty stub and `src-tauri/src/lib.rs` registers no commands.
+The UI is raw HTML and JS (`src/index.html`, `src/main.js`, no framework or bundler) calling the Tauri commands through `window.__TAURI__` (`withGlobalTauri`). The CI does not launch the app: UI behaviour is checked by hand.
 
 ## Architecture
 
 - **`dietlock-core`**: pure business logic. No Tauri, no SQLite, no clock. `Day` (strict `YYYY-MM-DD`), `WeighIn`, `Intake` are constructed through validating `new()` functions. "Today" must be passed in by the caller. Files: `error.rs` (`ValidationError`, `check_range`), `day.rs`, `weigh_in.rs`, `intake.rs`, `input.rs` (text parsing to integers, S6-S7), `energy.rs` (S8), `proposed_date.rs` (`SwitchHour`, proposed dates D1-D3 and D8, `check_not_future` D5); `lib.rs` only declares modules and re-exports.
 - **`dietlock-store`**: SQLite persistence via `rusqlite` (bundled). `Store` owns one connection, one row per date in `weigh_in` and `intake` tables. `save_*` takes a `replace` flag: when false and the date is filled, it returns `SaveError::AlreadyFilled(old)` so the caller can ask for confirmation (rule S3). Files: `lib.rs` (`Store`, thin delegating methods), `error.rs` (`StoreError`, `SaveError`), `schema.rs` (`SCHEMA_V1`, `migrate`), `weigh_in.rs` and `intake.rs` (SQL and row mapping as free functions on `&Connection`).
-- **`src-tauri` (lib `dietlock_lib`)**: Tauri shell. `main.rs` only calls `dietlock_lib::run()`. This is where IPC commands will go once they exist; `frontendDist` points at `../src`.
+- **`src-tauri` (lib `dietlock_lib`)**: Tauri shell. `main.rs` only calls `dietlock_lib::run()`. `lib.rs` opens the `Store` in the app data dir at startup and manages it as `Mutex<Store>`. `commands.rs` holds the IPC commands and is the only place that reads the clock (local date via `chrono`). `view.rs` holds the serialized view types and user-readable error messages, as pure tested functions. `frontendDist` points at `../src`.
 
 ### Invariants to keep in sync
 

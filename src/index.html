@@ -3,6 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <title>DietLock</title>
+    <script src="main.js" defer></script>
   </head>
-  <body></body>
+  <body>
+    <form id="weigh-in-form">
+      <label>Poids (kg) <input id="weight" type="text" inputmode="decimal" autocomplete="off" required /></label>
+      <label><input id="fasted" type="checkbox" checked /> À jeun</label>
+      <label>Date <input id="date" type="date" required /></label>
+      <button type="submit">Enregistrer</button>
+    </form>
+    <p id="error" role="alert" hidden></p>
+    <div id="confirm" hidden>
+      <p id="confirm-text"></p>
+      <button id="confirm-replace" type="button">Remplacer</button>
+      <button id="confirm-cancel" type="button">Annuler</button>
+    </div>
+
+    <h2>Tendance du jour</h2>
+    <p id="trend"></p>
+
+    <h2>Pesées des 30 derniers jours</h2>
+    <ul id="weigh-ins"></ul>
+  </body>
 </html>

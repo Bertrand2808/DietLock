@@ -7,6 +7,7 @@
     "frontendDist": "../src"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "DietLock",
@@ -15,7 +16,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'"
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost"
     }
   },
   "bundle": {
