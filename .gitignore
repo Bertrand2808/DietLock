@@ -2,3 +2,6 @@
 /src-tauri/gen/schemas
 
 docs
+
+/.claude/retros/
+.DS_Store
