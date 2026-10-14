@@ -6,12 +6,24 @@
     <script src="main.js" defer></script>
   </head>
   <body>
+    <h2>Pesée</h2>
     <form id="weigh-in-form">
       <label>Poids (kg) <input id="weight" type="text" inputmode="decimal" autocomplete="off" required /></label>
       <label><input id="fasted" type="checkbox" checked /> À jeun</label>
       <label>Date <input id="date" type="date" required /></label>
       <button type="submit">Enregistrer</button>
     </form>
+
+    <h2>Alimentation</h2>
+    <form id="intake-form">
+      <label>Protéines (g) <input id="protein" type="text" inputmode="numeric" autocomplete="off" /></label>
+      <label>Glucides (g) <input id="carbs" type="text" inputmode="numeric" autocomplete="off" /></label>
+      <label>Lipides (g) <input id="fat" type="text" inputmode="numeric" autocomplete="off" /></label>
+      <label>Eau (L, facultatif) <input id="water" type="text" inputmode="decimal" autocomplete="off" /></label>
+      <label>Date <input id="intake-date" type="date" required /></label>
+      <button type="submit">Enregistrer</button>
+    </form>
+
     <p id="error" role="alert" hidden></p>
     <div id="confirm" hidden>
       <p id="confirm-text"></p>
@@ -22,7 +34,7 @@
     <h2>Tendance du jour</h2>
     <p id="trend"></p>
 
-    <h2>Pesées des 30 derniers jours</h2>
-    <ul id="weigh-ins"></ul>
+    <h2>30 derniers jours</h2>
+    <ul id="days"></ul>
   </body>
 </html>

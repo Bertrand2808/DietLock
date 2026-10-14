@@ -20,3 +20,5 @@ dietlock-core = { path = "../dietlock-core" }
 dietlock-store = { path = "../dietlock-store" }
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
+# Same crate as dietlock-core, to pass it the local time read by chrono.
+time = { version = "0.3", default-features = false }
