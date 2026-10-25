@@ -137,10 +137,18 @@ mod tests {
     }
 
     #[test]
-    fn s6_s7_macros_whole_grams() {
-        assert_eq!(parse_macro_g("protein_g", "150"), Ok(150));
+    fn s6_s7_macros_one_decimal_gram() {
+        assert_eq!(parse_macro_g("protein_g", "12,5"), Ok(125));
+        assert_eq!(parse_macro_g("carbs_g", "200.3"), Ok(2003));
+        assert_eq!(parse_macro_g("fat_g", "60"), Ok(600));
+        assert_eq!(parse_macro_g("fat_g", "0,5"), Ok(5));
+        assert_eq!(parse_macro_g("protein_g", "150"), Ok(1500));
         assert_eq!(parse_macro_g("fat_g", "0"), Ok(0));
-        for s in ["1001", "12,5", "-1", "", "abc", "99999"] {
+        assert_eq!(parse_macro_g("protein_g", "1000"), Ok(10_000));
+        assert_eq!(parse_macro_g("protein_g", "1000,0"), Ok(10_000));
+        for s in [
+            "12,55", "1000,1", "1001", "-1", "", "abc", "99999", "12,5,1",
+        ] {
             assert!(
                 parse_macro_g("carbs_g", s).is_err(),
                 "{s:?} should be refused"
@@ -150,12 +158,16 @@ mod tests {
 
     #[test]
     fn s6_s7_water_litres_to_ml() {
+        assert_eq!(parse_water_ml("1,25"), Ok(Some(1250)));
+        assert_eq!(parse_water_ml("1.25"), Ok(Some(1250)));
         assert_eq!(parse_water_ml("1,5"), Ok(Some(1500)));
+        assert_eq!(parse_water_ml("1,2"), Ok(Some(1200)));
         assert_eq!(parse_water_ml("2"), Ok(Some(2000)));
         assert_eq!(parse_water_ml("10.0"), Ok(Some(10_000)));
+        assert_eq!(parse_water_ml("0,01"), Ok(Some(10)));
         assert_eq!(parse_water_ml("0"), Ok(Some(0)));
         assert_eq!(parse_water_ml(""), Ok(None));
-        for s in ["10,1", "1,55", "999", "-1", " ", "1,5 "] {
+        for s in ["1,255", "10,1", "10,01", "999", "-1", " ", "1,5 ", "abc"] {
             assert!(parse_water_ml(s).is_err(), "{s:?} should be refused");
         }
     }

@@ -121,6 +121,70 @@ mod tests {
     }
 
     #[test]
+    fn v1_whole_grams_become_tenths_and_water_stays_ml() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("dietlock-v1-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("dietlock.sqlite");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE weigh_in (
+                    date            TEXT    PRIMARY KEY NOT NULL CHECK (date(date) IS date),
+                    weight_tenth_kg INTEGER NOT NULL CHECK (weight_tenth_kg BETWEEN 300 AND 2500),
+                    fasted          INTEGER NOT NULL CHECK (fasted IN (0, 1))
+                ) STRICT;
+                CREATE TABLE intake (
+                    date      TEXT    PRIMARY KEY NOT NULL CHECK (date(date) IS date),
+                    protein_g INTEGER NOT NULL CHECK (protein_g BETWEEN 0 AND 1000),
+                    carbs_g   INTEGER NOT NULL CHECK (carbs_g BETWEEN 0 AND 1000),
+                    fat_g     INTEGER NOT NULL CHECK (fat_g BETWEEN 0 AND 1000),
+                    water_ml  INTEGER CHECK (water_ml IS NULL OR water_ml BETWEEN 0 AND 10000)
+                ) STRICT;
+                PRAGMA user_version = 1;
+                ",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO intake (date, protein_g, carbs_g, fat_g, water_ml)
+                 VALUES ('2026-10-12', 150, 0, 0, 2000)",
+                [],
+            )
+            .unwrap();
+        }
+        let check = |s: &Store| {
+            let version: i32 = s
+                .conn()
+                .query_row("PRAGMA user_version", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(version, 2);
+            let i = s.get_intake(day("2026-10-12")).unwrap().unwrap();
+            assert_eq!(i.protein_g(), 1500);
+            assert_eq!(i.carbs_g(), 0);
+            assert_eq!(i.fat_g(), 0);
+            assert_eq!(i.water_ml(), Some(2000));
+            assert_eq!(dietlock_core::energy_kcal(&i), 600);
+            let stored: i64 = s
+                .conn()
+                .query_row("SELECT * FROM intake", [], |r| r.get(1))
+                .unwrap();
+            assert_eq!(stored, 1500);
+        };
+        {
+            let s = Store::open(&path).unwrap();
+            check(&s);
+        }
+        let s = Store::open(&path).unwrap();
+        check(&s);
+        drop(s);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn newer_schema_is_refused() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA user_version = 2").unwrap();

@@ -72,6 +72,7 @@ pub(crate) fn delete_intake(conn: &Connection, date: Day) -> Result<(), StoreErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Store;
     use crate::tests::{day, intake, store};
 
     #[test]
@@ -86,6 +87,34 @@ mod tests {
         }
         s.save_intake(&second, true).unwrap();
         assert_eq!(s.get_intake(day("2026-10-12")).unwrap(), Some(second));
+    }
+
+    #[test]
+    fn decimal_intake_survives_reopen() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("dietlock-decimal-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("dietlock.sqlite");
+        let i = Intake::new(
+            day("2026-10-20"),
+            dietlock_core::parse_macro_g("protein_g", "12,5").unwrap(),
+            dietlock_core::parse_macro_g("carbs_g", "200.3").unwrap(),
+            dietlock_core::parse_macro_g("fat_g", "60").unwrap(),
+            dietlock_core::parse_water_ml("1,25").unwrap(),
+        )
+        .unwrap();
+        {
+            let mut s = Store::open(&path).unwrap();
+            s.save_intake(&i, false).unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert_eq!(s.get_intake(day("2026-10-20")).unwrap(), Some(i));
+        drop(s);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -11,7 +11,16 @@ pub fn energy_kcal(intake: &Intake) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::input::parse_macro_g;
     use crate::tests::day;
+
+    #[test]
+    fn s8_half_gram_of_fat_is_5_kcal() {
+        let d = day("2026-10-13");
+        let fat = parse_macro_g("fat_g", "0,5").unwrap();
+        let i = Intake::new(d, 0, 0, fat, None).unwrap();
+        assert_eq!(energy_kcal(&i), 5);
+    }
 
     #[test]
     fn s8_energy_of_macros() {

@@ -273,15 +273,54 @@ mod tests {
     }
 
     #[test]
+    fn history_shows_one_decimal_grams_and_two_decimal_litres() {
+        let i = Intake::new(
+            day("2026-10-12"),
+            parse_macro_g("protein_g", "12,5").unwrap(),
+            parse_macro_g("carbs_g", "200.3").unwrap(),
+            parse_macro_g("fat_g", "60").unwrap(),
+            parse_water_ml("1,25").unwrap(),
+        )
+        .unwrap();
+        let v = IntakeView::from(&i);
+        assert_eq!(v.protein_g.to_string(), "12,5");
+        assert_eq!(v.carbs_g.to_string(), "200,3");
+        assert_eq!(v.fat_g.to_string(), "60");
+        assert_eq!(v.water.as_deref(), Some("1,25"));
+        let sip = Intake::new(day("2026-10-12"), 0, 0, 0, parse_water_ml("0,05").unwrap()).unwrap();
+        assert_eq!(IntakeView::from(&sip).water.as_deref(), Some("0,05"));
+    }
+
+    #[test]
+    fn whole_grams_and_whole_litres_keep_kcal() {
+        let i = Intake::new(
+            day("2026-10-12"),
+            parse_macro_g("protein_g", "150").unwrap(),
+            parse_macro_g("carbs_g", "0").unwrap(),
+            parse_macro_g("fat_g", "0").unwrap(),
+            parse_water_ml("2").unwrap(),
+        )
+        .unwrap();
+        let v = IntakeView::from(&i);
+        assert_eq!(v.protein_g.to_string(), "150");
+        assert_eq!(v.carbs_g.to_string(), "0");
+        assert_eq!(v.fat_g.to_string(), "0");
+        assert_eq!(v.water.as_deref(), Some("2"));
+        assert_eq!(v.energy_kcal, 600);
+    }
+
+    #[test]
     fn refused_macros_and_water_have_readable_messages() {
         let empty = validation_message(&parse_macro_g("protein_g", "").unwrap_err());
         assert_eq!(empty, "Protein is required.");
-        let bad = validation_message(&parse_macro_g("fat_g", "12,5").unwrap_err());
-        assert!(bad.contains("Fat") && bad.contains("whole grams"), "{bad}");
+        let bad = validation_message(&parse_macro_g("fat_g", "12,55").unwrap_err());
+        assert!(bad.contains("Fat") && bad.contains("one decimal"), "{bad}");
         let big = validation_message(&parse_macro_g("carbs_g", "1001").unwrap_err());
         assert_eq!(big, "Carbs must be between 0 and 1000 g.");
-        let water = validation_message(&parse_water_ml("abc").unwrap_err());
-        assert!(water.contains("water"), "{water}");
+        let water = validation_message(&parse_water_ml("1,255").unwrap_err());
+        assert!(water.contains("two decimal"), "{water}");
+        let text = validation_message(&parse_macro_g("carbs_g", "abc").unwrap_err());
+        assert!(text.contains("Carbs"), "{text}");
     }
 
     #[test]
