@@ -39,3 +39,10 @@ The UI is raw HTML and JS (`src/index.html`, `src/main.js`, no framework or bund
 - Tests are inline `#[cfg(test)] mod tests` in the module they cover. Shared helpers live in the `tests` module of each crate's `lib.rs` (`pub(crate)`); tests spanning both entities stay there. Store tests use `Store::open_in_memory()`.
 - Dependency licences must be on the allowlist in `deny.toml` (MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0, or a per-crate exception). A new dependency with another licence fails CI.
 - Commit messages follow Conventional Commits with a scope, e.g. `feat(store): ...`.
+
+## What you need from me
+
+- End every turn where you're blocked on me, or where the next step needs me, with a short “**What I need from you**” section. Numbered, one concrete action per item: exactly what to do, where (which site, app, file or person), and what to send back. E.g. “Log into CommBank NetBank and export Jan to Jun 2026 as CSV, then drop it in `inbox/`”, not “I need the bank data”.
+- If there are several, put the quickest or most blocking one first, and say what you’ll get on with in the meantime.
+- If you don’t need anything from me, say “Nothing needed from you right now” so I don’t have to ask.
+- Never bury a request for me in the middle of a long update.
