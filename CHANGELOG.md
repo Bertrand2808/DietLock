@@ -2,6 +2,14 @@
 
 All notable changes to DietLock are listed here. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- Macros accept grams with at most one decimal. Water accepts litres with at most two decimals.
+- Energy stays a whole number of kcal and rounds half away from zero.
+- Opening a v0.1.0 database scales stored macros from grams to tenths of a gram. Water stays in millilitres.
+
 ## [0.1.0] - 2026-10-14
 
 First release: installable, unsigned macOS app (Apple Silicon, `.app` and `.dmg`). No design yet, no alert.

@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use chrono::Timelike;
 use dietlock_core::{
-    Day, Intake, IntakePresence, SwitchHour, WeighIn, check_not_future, parse_macro_g,
+    Day, Intake, IntakePresence, SwitchHour, WeighIn, check_not_future, parse_macro_tenth_g,
     parse_water_ml, parse_weight_tenth_kg, proposed_weigh_in_date, trend,
 };
 use dietlock_store::{SaveError, Store};
@@ -75,9 +75,9 @@ pub fn save_intake(
     let msg = |e: dietlock_core::ValidationError| view::validation_message(&e);
     let date = Day::parse(&date).map_err(msg)?;
     let date = check_not_future(date, today()?).map_err(msg)?;
-    let protein = parse_macro_g("protein_g", &protein_text).map_err(msg)?;
-    let carbs = parse_macro_g("carbs_g", &carbs_text).map_err(msg)?;
-    let fat = parse_macro_g("fat_g", &fat_text).map_err(msg)?;
+    let protein = parse_macro_tenth_g("protein_tenth_g", &protein_text).map_err(msg)?;
+    let carbs = parse_macro_tenth_g("carbs_tenth_g", &carbs_text).map_err(msg)?;
+    let fat = parse_macro_tenth_g("fat_tenth_g", &fat_text).map_err(msg)?;
     let water = parse_water_ml(&water_text).map_err(msg)?;
     let i = Intake::new(date, protein, carbs, fat, water).map_err(msg)?;
     match lock(&store)?.save_intake(&i, replace) {
