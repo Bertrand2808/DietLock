@@ -27,6 +27,27 @@ pub fn format_tenth_kg(tenth: i32) -> String {
     format!("{sign}{},{}", abs / 10, abs % 10)
 }
 
+/// `scale` 10 writes tenths (`12,5`) and `scale` 100 writes hundredths (`1,25`).
+/// A zero fraction is omitted (`60`, `2`).
+fn format_trimmed(value: u32, scale: u32) -> String {
+    let whole = value / scale;
+    let frac = value % scale;
+    if frac == 0 {
+        return whole.to_string();
+    }
+    let width = scale.ilog10() as usize;
+    let mut digits = format!("{frac:0width$}");
+    while digits.ends_with('0') {
+        digits.pop();
+    }
+    format!("{whole},{digits}")
+}
+
+/// Millilitres written as litres. Saved water is a multiple of 10 ml.
+fn format_water_l(ml: u16) -> String {
+    format_trimmed(u32::from(ml) / 10, 100)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeighInView {
@@ -49,10 +70,12 @@ impl From<&WeighIn> for WeighInView {
 #[serde(rename_all = "camelCase")]
 pub struct IntakeView {
     pub date: String,
-    pub protein_g: u16,
-    pub carbs_g: u16,
-    pub fat_g: u16,
-    /// Litres with a decimal comma, e.g. `1,5`; `None` when not entered.
+    /// Grams with a decimal comma, trailing zero omitted, e.g. `12,5` or `60`.
+    pub protein_g: String,
+    pub carbs_g: String,
+    pub fat_g: String,
+    /// Litres with a decimal comma, trailing zeros omitted, e.g. `1,25` or `2`.
+    /// `None` when not entered.
     pub water: Option<String>,
     pub energy_kcal: u32,
 }
@@ -61,11 +84,10 @@ impl From<&Intake> for IntakeView {
     fn from(i: &Intake) -> Self {
         Self {
             date: i.date().to_string(),
-            protein_g: i.protein_g(),
-            carbs_g: i.carbs_g(),
-            fat_g: i.fat_g(),
-            // The core stores water in whole tenths of a litre (100 ml).
-            water: i.water_ml().map(|ml| format_tenth_kg(i32::from(ml / 100))),
+            protein_g: format_trimmed(u32::from(i.protein_tenth_g()), 10),
+            carbs_g: format_trimmed(u32::from(i.carbs_tenth_g()), 10),
+            fat_g: format_trimmed(u32::from(i.fat_tenth_g()), 10),
+            water: i.water_ml().map(format_water_l),
             energy_kcal: energy_kcal(i),
         }
     }
@@ -167,7 +189,9 @@ pub fn validation_message(e: &ValidationError) -> String {
             if input.is_empty() {
                 format!("{label} is required.")
             } else {
-                format!("{input:?} is not valid for {label}: type whole grams, e.g. 150.")
+                format!(
+                    "{input:?} is not valid for {label}: type grams with at most one decimal, e.g. 12,5."
+                )
             }
         }
         ValidationError::OutOfRange { field, .. } if macro_label(field).is_some() => format!(
@@ -177,7 +201,9 @@ pub fn validation_message(e: &ValidationError) -> String {
         ValidationError::InvalidNumber {
             field: "water_ml",
             input,
-        } => format!("{input:?} is not a water amount: type litres, e.g. 1,5, or leave it empty."),
+        } => format!(
+            "{input:?} is not a water amount: type litres with at most two decimals, e.g. 1,25, or leave it empty."
+        ),
         ValidationError::OutOfRange {
             field: "water_ml", ..
         } => "Water must be between 0 and 10,0 L.".to_owned(),
@@ -190,9 +216,9 @@ pub fn validation_message(e: &ValidationError) -> String {
 /// Label of a macro field, `None` for other fields.
 fn macro_label(field: &str) -> Option<&'static str> {
     match field {
-        "protein_g" => Some("Protein"),
-        "carbs_g" => Some("Carbs"),
-        "fat_g" => Some("Fat"),
+        "protein_tenth_g" => Some("Protein"),
+        "carbs_tenth_g" => Some("Carbs"),
+        "fat_tenth_g" => Some("Fat"),
         _ => None,
     }
 }
@@ -205,7 +231,7 @@ pub fn store_message(e: &StoreError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dietlock_core::{parse_macro_g, parse_water_ml, parse_weight_tenth_kg};
+    use dietlock_core::{parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg};
 
     fn day(s: &str) -> Day {
         Day::parse(s).unwrap()
@@ -229,7 +255,7 @@ mod tests {
     }
 
     fn intake(d: &str, water_ml: Option<u16>) -> Intake {
-        Intake::new(day(d), 150, 250, 70, water_ml).unwrap()
+        Intake::new(day(d), 1500, 2500, 700, water_ml).unwrap()
     }
 
     #[test]
@@ -273,15 +299,65 @@ mod tests {
     }
 
     #[test]
+    fn history_shows_one_decimal_grams_and_two_decimal_litres() {
+        let i = Intake::new(
+            day("2026-10-12"),
+            parse_macro_tenth_g("protein_tenth_g", "12,5").unwrap(),
+            parse_macro_tenth_g("carbs_tenth_g", "200.3").unwrap(),
+            parse_macro_tenth_g("fat_tenth_g", "60").unwrap(),
+            parse_water_ml("1,25").unwrap(),
+        )
+        .unwrap();
+        let v = IntakeView::from(&i);
+        assert_eq!(v.protein_g, "12,5");
+        assert_eq!(v.carbs_g, "200,3");
+        assert_eq!(v.fat_g, "60");
+        assert_eq!(v.water.as_deref(), Some("1,25"));
+        let fat_only = Intake::new(
+            day("2026-10-12"),
+            0,
+            0,
+            parse_macro_tenth_g("fat_tenth_g", "0,5").unwrap(),
+            None,
+        )
+        .unwrap();
+        let fat_view = IntakeView::from(&fat_only);
+        assert_eq!(fat_view.fat_g, "0,5");
+        assert_eq!(fat_view.energy_kcal, 5);
+        let sip = Intake::new(day("2026-10-12"), 0, 0, 0, parse_water_ml("0,05").unwrap()).unwrap();
+        assert_eq!(IntakeView::from(&sip).water.as_deref(), Some("0,05"));
+    }
+
+    #[test]
+    fn whole_grams_and_whole_litres_keep_kcal() {
+        let i = Intake::new(
+            day("2026-10-12"),
+            parse_macro_tenth_g("protein_tenth_g", "150").unwrap(),
+            parse_macro_tenth_g("carbs_tenth_g", "0").unwrap(),
+            parse_macro_tenth_g("fat_tenth_g", "0").unwrap(),
+            parse_water_ml("2").unwrap(),
+        )
+        .unwrap();
+        let v = IntakeView::from(&i);
+        assert_eq!(v.protein_g, "150");
+        assert_eq!(v.carbs_g, "0");
+        assert_eq!(v.fat_g, "0");
+        assert_eq!(v.water.as_deref(), Some("2"));
+        assert_eq!(v.energy_kcal, 600);
+    }
+
+    #[test]
     fn refused_macros_and_water_have_readable_messages() {
-        let empty = validation_message(&parse_macro_g("protein_g", "").unwrap_err());
+        let empty = validation_message(&parse_macro_tenth_g("protein_tenth_g", "").unwrap_err());
         assert_eq!(empty, "Protein is required.");
-        let bad = validation_message(&parse_macro_g("fat_g", "12,5").unwrap_err());
-        assert!(bad.contains("Fat") && bad.contains("whole grams"), "{bad}");
-        let big = validation_message(&parse_macro_g("carbs_g", "1001").unwrap_err());
+        let bad = validation_message(&parse_macro_tenth_g("fat_tenth_g", "12,55").unwrap_err());
+        assert!(bad.contains("Fat") && bad.contains("one decimal"), "{bad}");
+        let big = validation_message(&parse_macro_tenth_g("carbs_tenth_g", "1001").unwrap_err());
         assert_eq!(big, "Carbs must be between 0 and 1000 g.");
-        let water = validation_message(&parse_water_ml("abc").unwrap_err());
-        assert!(water.contains("water"), "{water}");
+        let water = validation_message(&parse_water_ml("1,255").unwrap_err());
+        assert!(water.contains("two decimal"), "{water}");
+        let text = validation_message(&parse_macro_tenth_g("carbs_tenth_g", "abc").unwrap_err());
+        assert!(text.contains("Carbs"), "{text}");
     }
 
     #[test]

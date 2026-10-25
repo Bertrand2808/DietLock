@@ -1,7 +1,7 @@
 //! Parsing of user-typed text, with integers only (no floating point).
 
 use crate::error::{ValidationError, check_range};
-use crate::intake::{MACRO_G_MAX, WATER_ML_MAX};
+use crate::intake::{MACRO_TENTH_G_MAX, WATER_ML_MAX};
 use crate::weigh_in::{WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN};
 
 fn invalid_number(field: &'static str, input: &str) -> ValidationError {
@@ -22,21 +22,26 @@ fn parse_digits(s: &str) -> Option<u32> {
     }))
 }
 
-/// Parses `digits[(,|.)digit]` into tenths.
-/// No sign, no exponent, no surrounding whitespace, at most one decimal.
-fn parse_tenths(field: &'static str, s: &str) -> Result<u32, ValidationError> {
+/// Parses `digits[(,|.)digits]` with at most `places` fraction digits.
+/// The result is an integer scaled by `10^places`. A shorter fraction is
+/// padded with zeros. No sign, no exponent, no surrounding whitespace.
+fn parse_fixed(field: &'static str, s: &str, places: u32) -> Result<u32, ValidationError> {
     let err = || invalid_number(field, s);
     let (int, dec) = match s.find([',', '.']) {
         Some(i) => (&s[..i], Some(&s[i + 1..])),
         None => (s, None),
     };
     let int = parse_digits(int).ok_or_else(err)?;
-    let dec = match dec {
+    let scale = 10u32.pow(places);
+    let frac = match dec {
         None => 0,
-        Some(d) if d.len() == 1 => parse_digits(d).ok_or_else(err)?,
+        Some(d) if (1..=places).contains(&(d.len() as u32)) => {
+            let n = parse_digits(d).ok_or_else(err)?;
+            n.saturating_mul(10u32.pow(places - d.len() as u32))
+        }
         Some(_) => return Err(err()),
     };
-    Ok(int.saturating_mul(10).saturating_add(dec))
+    Ok(int.saturating_mul(scale).saturating_add(frac))
 }
 
 /// Narrows a value already checked against a `u16` range.
@@ -46,7 +51,7 @@ fn narrow(v: u32) -> u16 {
 
 /// S6, S7: weight typed in kg (`82,6` or `82.6`), returned in tenths of a kg.
 pub fn parse_weight_tenth_kg(s: &str) -> Result<u16, ValidationError> {
-    let v = parse_tenths("weight_tenth_kg", s)?;
+    let v = parse_fixed("weight_tenth_kg", s, 1)?;
     check_range(
         "weight_tenth_kg",
         v,
@@ -56,19 +61,20 @@ pub fn parse_weight_tenth_kg(s: &str) -> Result<u16, ValidationError> {
     Ok(narrow(v))
 }
 
-/// S6, S7: macro typed in whole grams.
-pub fn parse_macro_g(field: &'static str, s: &str) -> Result<u16, ValidationError> {
-    let v = parse_digits(s).ok_or_else(|| invalid_number(field, s))?;
-    check_range(field, v, 0, MACRO_G_MAX)?;
+/// S6, S7: macro typed in grams with at most one decimal, returned in tenths of a gram.
+pub fn parse_macro_tenth_g(field: &'static str, s: &str) -> Result<u16, ValidationError> {
+    let v = parse_fixed(field, s, 1)?;
+    check_range(field, v, 0, MACRO_TENTH_G_MAX)?;
     Ok(narrow(v))
 }
 
-/// S6, S7: water typed in litres (`1,5`), returned in mL. An empty field means absent.
+/// S6, S7: water typed in litres with at most two decimals (`1,25`), returned in mL.
+/// An empty field means absent. Two decimals make every accepted amount a multiple of 10 mL.
 pub fn parse_water_ml(s: &str) -> Result<Option<u16>, ValidationError> {
     if s.is_empty() {
         return Ok(None);
     }
-    let ml = parse_tenths("water_ml", s)?.saturating_mul(100);
+    let ml = parse_fixed("water_ml", s, 2)?.saturating_mul(10);
     check_range("water_ml", ml, 0, WATER_ML_MAX)?;
     Ok(Some(narrow(ml)))
 }
@@ -119,11 +125,11 @@ mod tests {
             Err(ValidationError::OutOfRange { .. })
         ));
         assert!(matches!(
-            parse_macro_g("protein_g", "99999"),
+            parse_macro_tenth_g("protein_tenth_g", "99999"),
             Err(ValidationError::OutOfRange { .. })
         ));
         assert!(matches!(
-            parse_macro_g("protein_g", &huge),
+            parse_macro_tenth_g("protein_tenth_g", &huge),
             Err(ValidationError::OutOfRange { .. })
         ));
         assert!(matches!(
@@ -137,12 +143,20 @@ mod tests {
     }
 
     #[test]
-    fn s6_s7_macros_whole_grams() {
-        assert_eq!(parse_macro_g("protein_g", "150"), Ok(150));
-        assert_eq!(parse_macro_g("fat_g", "0"), Ok(0));
-        for s in ["1001", "12,5", "-1", "", "abc", "99999"] {
+    fn s6_s7_macros_one_decimal_gram() {
+        assert_eq!(parse_macro_tenth_g("protein_tenth_g", "12,5"), Ok(125));
+        assert_eq!(parse_macro_tenth_g("carbs_tenth_g", "200.3"), Ok(2003));
+        assert_eq!(parse_macro_tenth_g("fat_tenth_g", "60"), Ok(600));
+        assert_eq!(parse_macro_tenth_g("fat_tenth_g", "0,5"), Ok(5));
+        assert_eq!(parse_macro_tenth_g("protein_tenth_g", "150"), Ok(1500));
+        assert_eq!(parse_macro_tenth_g("fat_tenth_g", "0"), Ok(0));
+        assert_eq!(parse_macro_tenth_g("protein_tenth_g", "1000"), Ok(10_000));
+        assert_eq!(parse_macro_tenth_g("protein_tenth_g", "1000,0"), Ok(10_000));
+        for s in [
+            "12,55", "1000,1", "1001", "-1", "", "abc", "99999", "12,5,1",
+        ] {
             assert!(
-                parse_macro_g("carbs_g", s).is_err(),
+                parse_macro_tenth_g("carbs_tenth_g", s).is_err(),
                 "{s:?} should be refused"
             );
         }
@@ -150,12 +164,16 @@ mod tests {
 
     #[test]
     fn s6_s7_water_litres_to_ml() {
+        assert_eq!(parse_water_ml("1,25"), Ok(Some(1250)));
+        assert_eq!(parse_water_ml("1.25"), Ok(Some(1250)));
         assert_eq!(parse_water_ml("1,5"), Ok(Some(1500)));
+        assert_eq!(parse_water_ml("1,2"), Ok(Some(1200)));
         assert_eq!(parse_water_ml("2"), Ok(Some(2000)));
         assert_eq!(parse_water_ml("10.0"), Ok(Some(10_000)));
+        assert_eq!(parse_water_ml("0,01"), Ok(Some(10)));
         assert_eq!(parse_water_ml("0"), Ok(Some(0)));
         assert_eq!(parse_water_ml(""), Ok(None));
-        for s in ["10,1", "1,55", "999", "-1", " ", "1,5 "] {
+        for s in ["1,255", "10,1", "10,01", "999", "-1", " ", "1,5 ", "abc"] {
             assert!(parse_water_ml(s).is_err(), "{s:?} should be refused");
         }
     }

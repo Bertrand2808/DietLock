@@ -106,7 +106,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn intake(d: &str, water: Option<u16>) -> Intake {
-        Intake::new(day(d), 150, 200, 70, water).unwrap()
+        Intake::new(day(d), 1500, 2000, 700, water).unwrap()
     }
 
     #[test]

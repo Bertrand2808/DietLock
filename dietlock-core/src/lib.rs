@@ -12,8 +12,8 @@ mod weigh_in;
 pub use day::Day;
 pub use energy::energy_kcal;
 pub use error::ValidationError;
-pub use input::{parse_macro_g, parse_water_ml, parse_weight_tenth_kg};
-pub use intake::{Intake, MACRO_G_MAX, WATER_ML_MAX};
+pub use input::{parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg};
+pub use intake::{Intake, MACRO_G_MAX, MACRO_TENTH_G_MAX, WATER_ML_MAX};
 pub use proposed_date::{
     IntakePresence, ProposedIntake, SwitchHour, check_not_future, proposed_intake_date,
     proposed_weigh_in_date,

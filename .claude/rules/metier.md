@@ -26,9 +26,9 @@ A day receives two independent inputs, and no existing data is replaced without 
 - **S3 · Confirmed replacement.** Entering a Weigh-in or an Intake on a date that already has one requires confirmation. The old value is shown next to the new one.
 - **S4 · Complete macros.** Protein, carbohydrate and fat are required together. Water is optional.
 - **S5 · No pre-fill.** No field is pre-filled. The values of the last Intake appear greyed out in empty fields, as a hint only. An empty field is never saved (S4).
-- **S6 · Formats.** Weight in kg with one decimal. Macros in whole grams. Water in litres with one decimal. Comma and point are both accepted as decimal separator.
+- **S6 · Formats.** Weight in kg with one decimal. Macros in grams with at most one decimal. Water in litres with at most two decimals. Comma and point are both accepted as decimal separator.
 - **S7 · Valid ranges.** Weight from 30 to 250 kg. Protein, carbohydrate and fat from 0 to 1,000 g each. Water from 0 to 10 L. An out-of-range value is refused with a message stating the expected range.
-- **S8 · Computed energy.** Energy = 4 × protein + 4 × carbohydrate + 9 × fat. It is never entered.
+- **S8 · Computed energy.** Energy = 4 × protein + 4 × carbohydrate + 9 × fat, rounded half away from zero to a whole kcal. It is never entered.
 - **S9 · Weigh-in conditions.** The "fasted in the morning" flag is checked by default.
 - **S10 · Deletion.** A Weigh-in or an Intake can be deleted after confirmation. Deleting a Weigh-in triggers the recalculation in T5.
 
