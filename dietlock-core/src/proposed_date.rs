@@ -6,7 +6,7 @@ use crate::error::{ValidationError, check_range};
 use time::Time;
 
 /// Hour before which an intake is attributed to the previous day (D2-D3).
-/// The D8 window opens at this hour.
+/// The morning D8 window opens at this hour. The evening proposal does not.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SwitchHour(u8);
 
@@ -29,8 +29,11 @@ impl Default for SwitchHour {
     }
 }
 
-/// The D8 window ends strictly before this hour.
+/// The morning D8 window ends strictly before this hour.
 const D8_END_HOUR: u8 = 12;
+
+/// From this hour inclusive, D8 proposes yesterday again when it has no intake.
+const EVENING_HOUR: u8 = 21;
 
 /// Which of the two days around the current one already hold an intake.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,7 +75,7 @@ pub fn proposed_intake_date(
             forgotten_yesterday: false,
         };
     }
-    let forgotten_yesterday = hour < D8_END_HOUR && !presence.yesterday && !presence.today;
+    let forgotten_yesterday = proposes_forgotten_yesterday(hour, presence);
     ProposedIntake {
         date: if forgotten_yesterday {
             yesterday
@@ -81,6 +84,14 @@ pub fn proposed_intake_date(
         },
         forgotten_yesterday,
     }
+}
+
+/// Morning D8 needs both days empty. From [`EVENING_HOUR`], only yesterday matters:
+/// a filled today does not cancel a missing yesterday.
+fn proposes_forgotten_yesterday(hour: u8, presence: IntakePresence) -> bool {
+    let morning = hour < D8_END_HOUR && !presence.yesterday && !presence.today;
+    let evening = hour >= EVENING_HOUR && !presence.yesterday;
+    morning || evening
 }
 
 /// D5: refuses a date later than the current day.
@@ -155,10 +166,49 @@ mod tests {
     }
 
     #[test]
-    fn d2_from_noon_is_today() {
+    fn d2_from_noon_until_evening_is_today() {
         assert_eq!(at(12, 0, false, false), day(TUESDAY));
         assert_eq!(at(12, 1, false, false), day(TUESDAY));
-        assert_eq!(at(23, 59, false, false), day(TUESDAY));
+        assert_eq!(at(20, 59, false, false), day(TUESDAY));
+        assert!(!proposal(20, 59, false, false).forgotten_yesterday);
+    }
+
+    #[test]
+    fn d8_at_21_empty_yesterday_proposes_yesterday() {
+        let empty_today = proposal(21, 0, false, false);
+        assert_eq!(empty_today.date, day(MONDAY));
+        assert!(empty_today.forgotten_yesterday);
+        // A filled today does not cancel a missing yesterday.
+        let filled_today = proposal(21, 0, false, true);
+        assert_eq!(filled_today.date, day(MONDAY));
+        assert!(filled_today.forgotten_yesterday);
+        assert_eq!(at(23, 59, false, false), day(MONDAY));
+    }
+
+    #[test]
+    fn d8_at_21_filled_yesterday_proposes_today() {
+        let empty_today = proposal(21, 0, true, false);
+        assert_eq!(empty_today.date, day(TUESDAY));
+        assert!(!empty_today.forgotten_yesterday);
+        let filled_today = proposal(21, 0, true, true);
+        assert_eq!(filled_today.date, day(TUESDAY));
+        assert!(!filled_today.forgotten_yesterday);
+    }
+
+    #[test]
+    fn d3_switch_hour_does_not_move_the_evening() {
+        let switch_hour = SwitchHour::new(11).unwrap();
+        let p = proposed_intake_date(
+            day(TUESDAY),
+            time(21, 0),
+            switch_hour,
+            IntakePresence {
+                yesterday: false,
+                today: false,
+            },
+        );
+        assert_eq!(p.date, day(MONDAY));
+        assert!(p.forgotten_yesterday);
     }
 
     #[test]
