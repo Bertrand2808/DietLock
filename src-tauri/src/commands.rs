@@ -33,7 +33,7 @@ fn now() -> Result<time::Time, String> {
 fn lock(store: &Mutex<Store>) -> Result<std::sync::MutexGuard<'_, Store>, String> {
     store
         .lock()
-        .map_err(|_| "The database is unavailable, restart the app.".to_owned())
+        .map_err(|_| view::database_unavailable_message().to_owned())
 }
 
 /// Saves a weigh-in typed by the user. With `replace` false and the date
@@ -124,7 +124,7 @@ pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
         .list_intakes(from, today)
         .map_err(|e| view::store_message(&e))?;
     // The history covers the trend window, and the store holds one row per date.
-    let trend = trend(&weigh_ins, today).map_err(|e| e.to_string())?;
+    let trend = trend(&weigh_ins, today).map_err(|_| view::duplicate_date_message().to_owned())?;
     Ok(Listing::new(
         today,
         proposed_weigh_in_date(today),

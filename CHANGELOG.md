@@ -6,6 +6,7 @@ All notable changes to DietLock are listed here. Format based on [Keep a Changel
 
 ### Changed
 
+- Error messages shown in the app are in French. The core and the store keep their own error text.
 - Macros accept grams with at most one decimal. Water accepts litres with at most two decimals.
 - Energy stays a whole number of kcal and rounds half away from zero.
 - Opening a v0.1.0 database scales stored macros from grams to tenths of a gram. Water stays in millilitres.
