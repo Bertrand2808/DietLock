@@ -1,5 +1,6 @@
 //! Pure business logic of DietLock: no dependency on Tauri, SQLite or the clock.
 
+mod alert;
 mod day;
 mod energy;
 mod error;
@@ -9,6 +10,7 @@ mod proposed_date;
 mod trend;
 mod weigh_in;
 
+pub use alert::{ALERT_HUNDREDTH_KG, alert};
 pub use day::Day;
 pub use energy::energy_kcal;
 pub use error::ValidationError;
