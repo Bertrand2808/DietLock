@@ -7,7 +7,8 @@
   </head>
   <body>
     <h2>Pesée</h2>
-    <form id="weigh-in-form">
+    <!-- novalidate: the browser's English bubble must not hide the French message from Rust. -->
+    <form id="weigh-in-form" novalidate>
       <label>Poids (kg) <input id="weight" type="text" inputmode="decimal" autocomplete="off" required /></label>
       <label><input id="fasted" type="checkbox" checked /> À jeun</label>
       <label>Date <input id="date" type="date" required /></label>
@@ -15,7 +16,7 @@
     </form>
 
     <h2>Alimentation</h2>
-    <form id="intake-form">
+    <form id="intake-form" novalidate>
       <label>Protéines (g) <input id="protein" type="text" inputmode="decimal" autocomplete="off" /></label>
       <label>Glucides (g) <input id="carbs" type="text" inputmode="decimal" autocomplete="off" /></label>
       <label>Lipides (g) <input id="fat" type="text" inputmode="decimal" autocomplete="off" /></label>

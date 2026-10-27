@@ -170,68 +170,98 @@ impl Listing {
 }
 
 /// Message shown to the user for a refused input.
+///
+/// Wording lives here: `dietlock-core` keeps its own error text.
 pub fn validation_message(e: &ValidationError) -> String {
     match e {
         ValidationError::OutOfRange {
             field: "weight_tenth_kg",
             ..
         } => format!(
-            "The weight must be between {} and {} kg.",
+            "Le poids doit être compris entre {} et {} kg.",
             format_tenth_kg(i32::from(WEIGHT_TENTH_KG_MIN)),
             format_tenth_kg(i32::from(WEIGHT_TENTH_KG_MAX)),
         ),
         ValidationError::InvalidNumber {
             field: "weight_tenth_kg",
             input,
-        } => format!("{input:?} is not a weight: type kg with at most one decimal, e.g. 82,6."),
-        ValidationError::InvalidNumber { field, input } if macro_label(field).is_some() => {
-            let label = macro_label(field).unwrap_or(field);
+        } => format!(
+            "{input:?} n'est pas un poids : indiquez des kilogrammes avec au plus une décimale, par exemple 82,6."
+        ),
+        ValidationError::InvalidNumber { field, input } if macro_name(field).is_some() => {
+            let name = macro_name(field).unwrap_or(field);
             if input.is_empty() {
-                format!("{label} is required.")
+                format!("Les {name} sont obligatoires.")
             } else {
                 format!(
-                    "{input:?} is not valid for {label}: type grams with at most one decimal, e.g. 12,5."
+                    "{input:?} n'est pas valide pour les {name} : indiquez des grammes avec au plus une décimale, par exemple 12,5."
                 )
             }
         }
-        ValidationError::OutOfRange { field, .. } if macro_label(field).is_some() => format!(
-            "{} must be between 0 and {MACRO_G_MAX} g.",
-            macro_label(field).unwrap_or(field)
-        ),
+        ValidationError::OutOfRange { field, .. } if macro_name(field).is_some() => {
+            format!(
+                "Les {} doivent rester entre 0 et {MACRO_G_MAX} g.",
+                macro_name(field).unwrap_or(field)
+            )
+        }
         ValidationError::InvalidNumber {
             field: "water_ml",
             input,
         } => format!(
-            "{input:?} is not a water amount: type litres with at most two decimals, e.g. 1,25, or leave it empty."
+            "{input:?} n'est pas une quantité d'eau : indiquez des litres avec au plus deux décimales, par exemple 1,25, ou laissez le champ vide."
         ),
         ValidationError::OutOfRange {
             field: "water_ml", ..
-        } => "Water must be between 0 and 10,0 L.".to_owned(),
-        ValidationError::FutureDate(d) => format!("The date {d} is in the future."),
-        ValidationError::InvalidDate(d) => format!("The date {d:?} is not valid."),
-        other => other.to_string(),
+        } => "L'eau doit être comprise entre 0 et 10,0 L.".to_owned(),
+        ValidationError::FutureDate(d) => format!("La date {d} est dans le futur."),
+        ValidationError::InvalidDate(d) => format!("La date {d:?} n'est pas valide."),
+        other => format!("La saisie n'est pas acceptée ({other})."),
     }
 }
 
-/// Label of a macro field, `None` for other fields.
-fn macro_label(field: &str) -> Option<&'static str> {
+/// Noun of a macro field, without an article. `None` for other fields.
+fn macro_name(field: &str) -> Option<&'static str> {
     match field {
-        "protein_tenth_g" => Some("Protein"),
-        "carbs_tenth_g" => Some("Carbs"),
-        "fat_tenth_g" => Some("Fat"),
+        "protein_tenth_g" => Some("protéines"),
+        "carbs_tenth_g" => Some("glucides"),
+        "fat_tenth_g" => Some("lipides"),
         _ => None,
     }
 }
 
 /// Message shown to the user for a database failure.
+///
+/// The SQLite driver text is kept as the library reports it.
 pub fn store_message(e: &StoreError) -> String {
-    format!("The database could not be read or written: {e}")
+    match e {
+        StoreError::Sqlite(err) => {
+            format!("La base de données n'a pas pu être lue ou écrite : {err}")
+        }
+        StoreError::UnsupportedSchemaVersion(version) => {
+            format!("La base de données utilise une version inconnue ({version}).")
+        }
+        StoreError::InvalidRow(_) => "La base de données contient une ligne invalide.".to_owned(),
+    }
+}
+
+/// Shown when the database lock cannot be taken.
+pub fn database_unavailable_message() -> &'static str {
+    "La base de données est indisponible, redémarrez l'application."
+}
+
+/// Shown when the history contains two weigh-ins on the same day.
+pub fn duplicate_date_message() -> &'static str {
+    "Deux pesées portent la même date."
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dietlock_core::{parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg};
+    use dietlock_core::{
+        ValidationError, check_not_future, parse_macro_tenth_g, parse_water_ml,
+        parse_weight_tenth_kg,
+    };
+    use dietlock_store::StoreError;
 
     fn day(s: &str) -> Day {
         Day::parse(s).unwrap()
@@ -347,24 +377,110 @@ mod tests {
     }
 
     #[test]
-    fn refused_macros_and_water_have_readable_messages() {
-        let empty = validation_message(&parse_macro_tenth_g("protein_tenth_g", "").unwrap_err());
-        assert_eq!(empty, "Protein is required.");
-        let bad = validation_message(&parse_macro_tenth_g("fat_tenth_g", "12,55").unwrap_err());
-        assert!(bad.contains("Fat") && bad.contains("one decimal"), "{bad}");
-        let big = validation_message(&parse_macro_tenth_g("carbs_tenth_g", "1001").unwrap_err());
-        assert_eq!(big, "Carbs must be between 0 and 1000 g.");
-        let water = validation_message(&parse_water_ml("1,255").unwrap_err());
-        assert!(water.contains("two decimal"), "{water}");
-        let text = validation_message(&parse_macro_tenth_g("carbs_tenth_g", "abc").unwrap_err());
-        assert!(text.contains("Carbs"), "{text}");
+    fn weight_that_is_not_a_number_shows_a_french_example() {
+        let abc = validation_message(&parse_weight_tenth_kg("abc").unwrap_err());
+        assert_eq!(
+            abc,
+            "\"abc\" n'est pas un poids : indiquez des kilogrammes avec au plus une décimale, par exemple 82,6."
+        );
     }
 
     #[test]
-    fn refused_weights_have_readable_messages() {
-        let abc = validation_message(&parse_weight_tenth_kg("abc").unwrap_err());
-        assert!(abc.contains("not a weight"), "{abc}");
-        let big = validation_message(&parse_weight_tenth_kg("300").unwrap_err());
-        assert_eq!(big, "The weight must be between 30,0 and 250,0 kg.");
+    fn empty_protein_is_required_in_french() {
+        let empty = validation_message(&parse_macro_tenth_g("protein_tenth_g", "").unwrap_err());
+        assert_eq!(empty, "Les protéines sont obligatoires.");
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("carbs_tenth_g", "").unwrap_err()),
+            "Les glucides sont obligatoires."
+        );
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("fat_tenth_g", "").unwrap_err()),
+            "Les lipides sont obligatoires."
+        );
+    }
+
+    #[test]
+    fn out_of_bounds_values_and_future_dates_are_refused_in_french() {
+        assert_eq!(
+            validation_message(&parse_weight_tenth_kg("300").unwrap_err()),
+            "Le poids doit être compris entre 30,0 et 250,0 kg."
+        );
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("carbs_tenth_g", "1001").unwrap_err()),
+            "Les glucides doivent rester entre 0 et 1000 g."
+        );
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("protein_tenth_g", "1001").unwrap_err()),
+            "Les protéines doivent rester entre 0 et 1000 g."
+        );
+        assert_eq!(
+            validation_message(&parse_water_ml("11").unwrap_err()),
+            "L'eau doit être comprise entre 0 et 10,0 L."
+        );
+        let future = check_not_future(day("2026-10-14"), day("2026-10-13")).unwrap_err();
+        assert_eq!(
+            validation_message(&future),
+            "La date 2026-10-14 est dans le futur."
+        );
+        let invalid = Day::parse("2026-13-01").unwrap_err();
+        assert_eq!(
+            validation_message(&invalid),
+            "La date \"2026-13-01\" n'est pas valide."
+        );
+    }
+
+    #[test]
+    fn malformed_macros_and_water_name_the_field_in_french() {
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("fat_tenth_g", "12,55").unwrap_err()),
+            "\"12,55\" n'est pas valide pour les lipides : indiquez des grammes avec au plus une décimale, par exemple 12,5."
+        );
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("carbs_tenth_g", "abc").unwrap_err()),
+            "\"abc\" n'est pas valide pour les glucides : indiquez des grammes avec au plus une décimale, par exemple 12,5."
+        );
+        assert_eq!(
+            validation_message(&parse_water_ml("1,255").unwrap_err()),
+            "\"1,255\" n'est pas une quantité d'eau : indiquez des litres avec au plus deux décimales, par exemple 1,25, ou laissez le champ vide."
+        );
+    }
+
+    #[test]
+    fn database_errors_are_shown_in_french() {
+        assert_eq!(
+            store_message(&StoreError::UnsupportedSchemaVersion(7)),
+            "La base de données utilise une version inconnue (7)."
+        );
+        assert_eq!(
+            store_message(&StoreError::InvalidRow(ValidationError::InvalidDate(
+                "x".into()
+            ))),
+            "La base de données contient une ligne invalide."
+        );
+        assert_eq!(
+            database_unavailable_message(),
+            "La base de données est indisponible, redémarrez l'application."
+        );
+    }
+
+    #[test]
+    fn a_duplicated_weigh_in_date_is_explained_in_french() {
+        assert_eq!(
+            duplicate_date_message(),
+            "Deux pesées portent la même date."
+        );
+    }
+
+    #[test]
+    fn an_unknown_field_is_refused_in_french() {
+        let msg = validation_message(&ValidationError::OutOfRange {
+            field: "unknown",
+            value: 1,
+            min: 0,
+            max: 2,
+        });
+        assert!(msg.starts_with("La saisie n'est pas acceptée ("), "{msg}");
+        assert!(msg.contains("unknown"), "{msg}");
+        assert!(msg.ends_with(")."), "{msg}");
     }
 }
