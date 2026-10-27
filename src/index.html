@@ -3,39 +3,111 @@
   <head>
     <meta charset="UTF-8" />
     <title>DietLock</title>
-    <script src="main.js" defer></script>
+    <link rel="stylesheet" href="app.css" />
+    <script type="module" src="main.js"></script>
   </head>
   <body>
-    <h2>Pesée</h2>
-    <!-- novalidate: the browser's English bubble must not hide the French message from Rust. -->
-    <form id="weigh-in-form" novalidate>
-      <label>Poids (kg) <input id="weight" type="text" inputmode="decimal" autocomplete="off" required /></label>
-      <label><input id="fasted" type="checkbox" checked /> À jeun</label>
-      <label>Date <input id="date" type="date" required /></label>
-      <button type="submit">Enregistrer</button>
-    </form>
+    <main class="col">
+      <header class="head">
+        <h1 id="headline" class="trend"></h1>
+        <p id="subhead" class="sub"></p>
+      </header>
 
-    <h2>Alimentation</h2>
-    <form id="intake-form" novalidate>
-      <label>Protéines (g) <input id="protein" type="text" inputmode="decimal" autocomplete="off" /></label>
-      <label>Glucides (g) <input id="carbs" type="text" inputmode="decimal" autocomplete="off" /></label>
-      <label>Lipides (g) <input id="fat" type="text" inputmode="decimal" autocomplete="off" /></label>
-      <label>Eau (L, facultatif) <input id="water" type="text" inputmode="decimal" autocomplete="off" /></label>
-      <label>Date <input id="intake-date" type="date" required /></label>
-      <button type="submit">Enregistrer</button>
-    </form>
+      <form id="entry" class="card" novalidate>
+        <div class="row">
+          <div class="when">
+            <span class="chip" id="weigh-chip"></span>
+          </div>
+          <label class="field">
+            <input
+              id="weight"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="—"
+              aria-label="Poids en kilogrammes"
+            />
+            <span>kg</span>
+          </label>
+          <label class="check">
+            <input id="fasted" type="checkbox" checked />
+            à jeun
+          </label>
+          <p class="msg" id="weigh-error" role="alert" hidden></p>
+        </div>
 
-    <p id="error" role="alert" hidden></p>
-    <div id="confirm" hidden>
-      <p id="confirm-text"></p>
-      <button id="confirm-replace" type="button">Remplacer</button>
-      <button id="confirm-cancel" type="button">Annuler</button>
-    </div>
+        <div class="row">
+          <div class="when">
+            <span class="chip" id="intake-chip"></span>
+            <span class="forgot" id="forgot" hidden>hier oublié</span>
+          </div>
+          <label class="field">
+            P
+            <input
+              id="protein"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="—"
+              aria-label="Protéines en grammes"
+            />
+            g
+          </label>
+          <label class="field">
+            G
+            <input
+              id="carbs"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="—"
+              aria-label="Glucides en grammes"
+            />
+            g
+          </label>
+          <label class="field">
+            L
+            <input
+              id="fat"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="—"
+              aria-label="Lipides en grammes"
+            />
+            g
+          </label>
+          <label class="field">
+            Eau
+            <input
+              id="water"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="—"
+              aria-label="Eau en litres"
+            />
+            L
+          </label>
+          <p class="msg" id="intake-error" role="alert" hidden></p>
+        </div>
 
-    <h2>Tendance du jour</h2>
-    <p id="trend"></p>
+        <div class="confirm" id="confirm" hidden>
+          <p id="confirm-text"></p>
+          <div class="confirm-actions">
+            <button id="confirm-replace" type="button">Remplacer</button>
+            <button id="confirm-cancel" type="button">Annuler</button>
+          </div>
+        </div>
 
-    <h2>30 derniers jours</h2>
-    <ul id="days"></ul>
+        <div class="bar">
+          <p class="hint"><kbd>Tab</kbd> champ suivant · <kbd>⌘</kbd><kbd>↩</kbd> enregistrer</p>
+          <p class="ok" id="saved" role="status" hidden>✓ Journée enregistrée</p>
+          <button id="save" class="submit" type="button" title="Enregistrer">↑</button>
+        </div>
+      </form>
+
+      <section class="hist" id="hist" aria-label="Historique"></section>
+    </main>
   </body>
 </html>

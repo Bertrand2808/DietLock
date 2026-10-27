@@ -51,6 +51,21 @@ impl Day {
             .checked_sub(time::Duration::days(i64::from(days)))
             .map(Self)
     }
+
+    /// Day of the month, from 1.
+    pub fn day_number(self) -> u8 {
+        self.0.day()
+    }
+
+    /// Month number, from 1.
+    pub fn month_number(self) -> u8 {
+        u8::from(self.0.month())
+    }
+
+    /// Weekday index, Sunday is 0.
+    pub fn weekday_index(self) -> u8 {
+        self.0.weekday().number_days_from_sunday()
+    }
 }
 
 impl fmt::Display for Day {
@@ -73,6 +88,15 @@ mod tests {
     #[test]
     fn leap_day_2028_is_accepted() {
         assert_eq!(day("2028-02-29").to_string(), "2028-02-29");
+    }
+
+    #[test]
+    fn calendar_parts_of_a_known_sunday() {
+        let sunday = day("2026-10-25");
+        assert_eq!(sunday.day_number(), 25);
+        assert_eq!(sunday.month_number(), 10);
+        assert_eq!(sunday.weekday_index(), 0);
+        assert_eq!(day("2026-10-26").weekday_index(), 1);
     }
 
     #[test]

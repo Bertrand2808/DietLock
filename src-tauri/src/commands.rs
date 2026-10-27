@@ -5,8 +5,9 @@ use std::sync::Mutex;
 
 use chrono::Timelike;
 use dietlock_core::{
-    Day, Intake, IntakePresence, SwitchHour, WeighIn, check_not_future, parse_macro_tenth_g,
-    parse_water_ml, parse_weight_tenth_kg, proposed_weigh_in_date, trend,
+    Day, Intake, IntakePresence, SwitchHour, TREND_WINDOW_DAYS, WeighIn, check_not_future,
+    parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
+    proposed_intake_date as core_proposed_intake_date, proposed_weigh_in_date, trend,
 };
 use dietlock_store::{SaveError, Store};
 use tauri::State;
@@ -106,28 +107,43 @@ pub fn proposed_intake_date(store: State<'_, Mutex<Store>>) -> Result<String, St
         yesterday: has(yesterday)?,
         today: has(today)?,
     };
-    let p = dietlock_core::proposed_intake_date(today, now()?, SwitchHour::default(), presence);
+    let p = core_proposed_intake_date(today, now()?, SwitchHour::default(), presence);
     Ok(p.date.to_string())
 }
 
-/// Weigh-in and intake of each of the last [`view::HISTORY_DAYS`] days,
-/// today's trend and the date proposed for a new weigh-in (D1).
+/// Home screen: trend, the dates proposed for the weigh-in (D1) and the
+/// intake (D2–D8), and the last [`view::HISTORY_DAYS`] days.
+///
+/// Weigh-ins start one trend window before the history, so an alert on the
+/// oldest visible day can still see the previous day's trend (A1). The
+/// proposed intake date comes from `dietlock_core`; this function does not
+/// reimplement it.
 #[tauri::command]
 pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
     let today = today()?;
+    let now = now()?;
     let from = view::history_start(today);
+    let weigh_from = from.minus_days(TREND_WINDOW_DAYS).unwrap_or(from);
     let store = lock(&store)?;
     let weigh_ins = store
-        .list_weigh_ins(from, today)
+        .list_weigh_ins(weigh_from, today)
         .map_err(|e| view::store_message(&e))?;
     let intakes = store
         .list_intakes(from, today)
         .map_err(|e| view::store_message(&e))?;
     // The history covers the trend window, and the store holds one row per date.
     let trend = trend(&weigh_ins, today).map_err(|_| view::duplicate_date_message().to_owned())?;
+    let yesterday = today.previous().unwrap_or(today);
+    let presence = IntakePresence {
+        yesterday: intakes.iter().any(|i| i.date() == yesterday),
+        today: intakes.iter().any(|i| i.date() == today),
+    };
+    let proposed = core_proposed_intake_date(today, now, SwitchHour::default(), presence);
     Ok(Listing::new(
         today,
+        now.hour(),
         proposed_weigh_in_date(today),
+        proposed,
         &weigh_ins,
         &intakes,
         trend,

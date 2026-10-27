@@ -6,6 +6,9 @@ All notable changes to DietLock are listed here. Format based on [Keep a Changel
 
 ### Changed
 
+- The home screen is one card: today's weigh-in, the proposed intake and water, the weight trend, and 30 days of weight, energy and water.
+- A fasted weigh-in at least 3 kg from the previous day's trend is marked in the history.
+- The screen follows the system light and dark appearance. Colours are CSS variables.
 - Error messages shown in the app are in French. The core and the store keep their own error text.
 - Macros accept grams with at most one decimal. Water accepts litres with at most two decimals.
 - Energy stays a whole number of kcal and rounds half away from zero.

@@ -1,0 +1,380 @@
+/* Every colour lives in these variables. Light is the default; dark follows the system. */
+:root {
+  color-scheme: light;
+  --bg: #f7f4ef;
+  --fg: #2a2622;
+  --mut: #857c72;
+  --line: #e5ded4;
+  --card: #fff;
+  --acc: #c0643d;
+  --on-acc: #fff;
+  --ring: rgba(192, 100, 61, 0.18);
+  --bad: #b3261e;
+  --warn: #a86a12;
+  --warn-bg: #f8efe3;
+  --soft: #efe9e1;
+  --check: #2f6fed;
+  --shadow: 0 4px 18px rgba(60, 40, 20, 0.08);
+  --mask: #000;
+  --fade: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #1f1d1b;
+    --fg: #ece7e1;
+    --mut: #9c948b;
+    --line: #34302c;
+    --card: #2a2724;
+    --acc: #e08a63;
+    --on-acc: #1f1d1b;
+    --ring: rgba(224, 138, 99, 0.2);
+    --bad: #ff8a80;
+    --warn: #e6b35c;
+    --warn-bg: #3a2c22;
+    --soft: #2c2926;
+    --check: #7aa2ff;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+.col {
+  width: 640px;
+  max-width: calc(100% - 48px);
+  height: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 22px 0 16px;
+}
+
+.head {
+  text-align: center;
+  padding: 8px 0 16px;
+}
+
+.trend {
+  margin: 0;
+  min-height: 38px;
+  font: 400 34px/1.1 Georgia, "Iowan Old Style", "Liberation Serif", serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend small {
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--mut);
+}
+
+.trend.greet {
+  color: var(--mut);
+}
+
+.sub {
+  margin: 6px 0 0;
+  color: var(--mut);
+  font-variant-numeric: tabular-nums;
+}
+
+.sub b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 12px 14px 10px;
+}
+
+.card.bad {
+  border-color: var(--bad);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+.when {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 168px;
+  flex: none;
+}
+
+.chip {
+  font-size: 11px;
+  background: var(--soft);
+  color: var(--mut);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.chip b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.chip.warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.chip.warn b {
+  color: var(--warn);
+}
+
+.forgot {
+  font-size: 11px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--mut);
+}
+
+.field input {
+  width: 64px;
+  text-align: right;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 2px;
+  font-size: 15px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.field input::placeholder {
+  color: var(--mut);
+}
+
+.field input:focus {
+  outline: none;
+  border-bottom-color: var(--acc);
+}
+
+.field input.bad {
+  border-bottom: 2px solid var(--bad);
+  color: var(--bad);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.check input {
+  width: auto;
+  accent-color: var(--check);
+}
+
+.msg {
+  flex: 1 0 100%;
+  margin: 2px 0 0;
+  padding-left: 178px;
+  color: var(--bad);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.msg[hidden],
+.forgot[hidden],
+.confirm[hidden],
+.ok[hidden] {
+  display: none;
+}
+
+.confirm {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--soft);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.confirm p {
+  margin: 0 0 8px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.confirm button {
+  border-radius: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+#confirm-replace {
+  border: 0;
+  background: var(--acc);
+  color: var(--on-acc);
+}
+
+#confirm-cancel {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.hint {
+  flex: 1;
+  margin: 0;
+  font-size: 12px;
+  color: var(--mut);
+}
+
+kbd {
+  font: 11px -apple-system, system-ui, sans-serif;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--mut);
+}
+
+.ok {
+  margin: 0;
+  font-size: 12px;
+  color: var(--acc);
+  white-space: nowrap;
+}
+
+.submit {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 0;
+  border-radius: 10px;
+  background: var(--acc);
+  color: var(--on-acc);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.submit:focus-visible,
+.confirm button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.hist {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  margin-top: 18px;
+}
+
+.hist.fade {
+  -webkit-mask-image: linear-gradient(var(--mask) 72%, var(--fade));
+  mask-image: linear-gradient(var(--mask) 72%, var(--fade));
+}
+
+.hist h2 {
+  margin: 6px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mut);
+}
+
+.day {
+  display: flex;
+  gap: 14px;
+  padding: 5px 2px;
+  font-size: 13px;
+  border-bottom: 1px dashed var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.day .dt {
+  width: 112px;
+  flex: none;
+  color: var(--mut);
+}
+
+.day .w {
+  width: 118px;
+  flex: none;
+  font-weight: 600;
+}
+
+.day .w.alert {
+  color: var(--warn);
+}
+
+.day .k {
+  flex: 1;
+  color: var(--mut);
+}
+
+.empty {
+  margin: 0;
+  padding: 56px 12px;
+  text-align: center;
+  color: var(--mut);
+  font: 15px/1.5 Georgia, "Iowan Old Style", "Liberation Serif", serif;
+}
