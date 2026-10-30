@@ -5,9 +5,11 @@ import {
   addDays,
   canSelect,
   chipView,
+  dayClick,
   filledDates,
   frenchDate,
   futureDateMessage,
+  localToday,
   monthGrid,
   monthTitle,
   shiftMonth,
@@ -77,6 +79,24 @@ test("a future day cannot be selected", () => {
   assert.equal(
     futureDateMessage("2026-10-31"),
     "sam. 31 oct. est dans le futur, choisis aujourd'hui ou avant.",
+  );
+});
+
+test("after midnight the new day can be chosen and a future click does not save", () => {
+  const rolled = localToday(new Date(2026, 9, 31, 0, 5));
+  assert.equal(rolled, addDays(TODAY, 1));
+  assert.equal(canSelect(rolled, TODAY), false);
+  assert.equal(canSelect(rolled, rolled), true);
+  assert.deepEqual(dayClick(rolled, rolled), { action: "select", save: false });
+  const later = addDays(rolled, 1);
+  assert.deepEqual(dayClick(later, rolled), {
+    action: "refuse",
+    save: false,
+    message: futureDateMessage(later),
+  });
+  assert.equal(
+    futureDateMessage(later),
+    "dim. 1 nov. est dans le futur, choisis aujourd'hui ou avant.",
   );
 });
 

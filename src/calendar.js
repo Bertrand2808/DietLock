@@ -63,12 +63,29 @@ export function canSelect(iso, today) {
   return iso <= today;
 }
 
+/** Local calendar day as `YYYY-MM-DD`. `now` defaults to the current clock. */
+export function localToday(now = new Date()) {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 /**
- * Sentence of `view::validation_message` for a future date.
- * The screen shows the text returned by the command; this is the same wording.
+ * Sentence shown when a day is still in the future (D5).
+ * Same wording as `view::validation_message`. The screen shows it directly.
  */
 export function futureDateMessage(iso) {
   return `${frenchDate(iso)} est dans le futur, choisis aujourd'hui ou avant.`;
+}
+
+/**
+ * A day click selects that day, or refuses it in French.
+ * Refusal never saves: no command is involved.
+ */
+export function dayClick(iso, today) {
+  if (canSelect(iso, today)) return { action: "select", save: false };
+  return { action: "refuse", save: false, message: futureDateMessage(iso) };
 }
 
 /** `ven. 30 oct.` */

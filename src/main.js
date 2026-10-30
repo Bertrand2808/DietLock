@@ -3,8 +3,10 @@ import {
   addDays,
   canSelect,
   chipView,
+  dayClick,
   filledDates,
   frenchDate,
+  localToday,
   monthGrid,
   monthOf,
   monthTitle,
@@ -397,7 +399,15 @@ function renderPop() {
   }
 }
 
+function syncToday() {
+  const next = localToday();
+  if (next === todayIso) return false;
+  todayIso = next;
+  return true;
+}
+
 function openPicker(kind) {
+  syncToday();
   openKind = kind;
   const current = monthOf(kind === "weigh" ? weighDateNow() : intakeDateNow());
   viewYear = current.year;
@@ -429,39 +439,21 @@ function selectDay(kind, iso) {
   closePicker();
 }
 
-// D5: a future day is not selected. The command answers in French and the
-// typed values stay, because this path does not refresh the form.
-async function rejectFuture(kind, iso) {
+// D5: a future day is not selected. The message is local, so this click
+// never calls a command and never refreshes the form.
+function rejectFuture(kind, message) {
   closePicker();
   clearErrors();
-  try {
-    if (kind === "weigh") {
-      await invoke("save_weigh_in", {
-        weightText: $("weight").value,
-        fasted: $("fasted").checked,
-        date: iso,
-        replace: false,
-      });
-    } else {
-      await invoke("save_intake", {
-        proteinText: $("protein").value,
-        carbsText: $("carbs").value,
-        fatText: $("fat").value,
-        waterText: $("water").value,
-        date: iso,
-        replace: false,
-      });
-    }
-  } catch (e) {
-    showBlockError(kind, errorText(e));
-  }
+  showBlockError(kind, message);
 }
 
 function onDay(iso) {
   const kind = openKind;
   if (!kind) return;
-  if (!canSelect(iso, todayIso)) {
-    void rejectFuture(kind, iso);
+  syncToday();
+  const choice = dayClick(iso, todayIso);
+  if (choice.action === "refuse") {
+    rejectFuture(kind, choice.message);
     return;
   }
   selectDay(kind, iso);
@@ -520,6 +512,13 @@ for (const id of ["weight", "protein", "carbs", "fat", "water"]) {
 }
 $("fasted").addEventListener("change", () => {
   $("saved").hidden = true;
+});
+
+window.addEventListener("focus", () => {
+  if (!proposedWeigh && !proposedIntake) return;
+  if (!syncToday()) return;
+  paintChips();
+  if (openKind) renderPop();
 });
 
 refresh().catch((e) => showBlockError("weigh", errorText(e)));
