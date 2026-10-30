@@ -358,7 +358,10 @@ pub fn validation_message(e: &ValidationError) -> String {
         ValidationError::OutOfRange {
             field: "water_ml", ..
         } => "L'eau doit être comprise entre 0 et 10,0 L.".to_owned(),
-        ValidationError::FutureDate(d) => format!("La date {d} est dans le futur."),
+        ValidationError::FutureDate(d) => {
+            let label = Day::parse(d).map(french_date).unwrap_or_else(|_| d.clone());
+            format!("{label} est dans le futur, choisis aujourd'hui ou avant.")
+        }
         ValidationError::InvalidDate(d) => format!("La date {d:?} n'est pas valide."),
         other => format!("La saisie n'est pas acceptée ({other})."),
     }
@@ -587,7 +590,7 @@ mod tests {
         let future = check_not_future(day("2026-10-14"), day("2026-10-13")).unwrap_err();
         assert_eq!(
             validation_message(&future),
-            "La date 2026-10-14 est dans le futur."
+            "mer. 14 oct. est dans le futur, choisis aujourd'hui ou avant."
         );
         let invalid = Day::parse("2026-13-01").unwrap_err();
         assert_eq!(

@@ -109,6 +109,8 @@ input {
 }
 
 .card {
+  position: relative;
+  z-index: 2;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -133,11 +135,12 @@ input {
 }
 
 .when {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
-  width: 168px;
+  width: 184px;
   flex: none;
 }
 
@@ -154,6 +157,55 @@ input {
 .chip b {
   color: var(--fg);
   font-weight: 600;
+}
+
+.chip.pick {
+  position: relative;
+  z-index: 2;
+  border: 0;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+}
+
+.chip.pick .cv {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+.chip.pick.open {
+  box-shadow: 0 0 0 3px var(--ring);
+  background: var(--card);
+  outline: 1px solid var(--acc);
+  color: var(--mut);
+}
+
+.chip.pick.open b {
+  color: var(--fg);
+}
+
+.chip.moved {
+  background: var(--ring);
+  color: var(--acc);
+}
+
+.chip.moved b {
+  color: var(--acc);
+}
+
+.chip.pick,
+.pop button {
+  outline: none;
+}
+
+.chip.pick:focus-visible,
+.pop button:focus-visible {
+  box-shadow: 0 0 0 3px var(--ring);
 }
 
 .chip.warn {
@@ -225,17 +277,154 @@ input {
 .msg {
   flex: 1 0 100%;
   margin: 2px 0 0;
-  padding-left: 178px;
+  padding-left: 194px;
   color: var(--bad);
   font-size: 12px;
   line-height: 1.35;
 }
 
+.pop {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  z-index: 5;
+  width: 232px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 10px;
+}
+
+.pop-q {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pop-q button {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 7px;
+  background: var(--soft);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.pop-q button.sel {
+  background: var(--acc);
+  color: var(--on-acc);
+}
+
+.pop-m {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 2px 2px 6px;
+}
+
+.pop-nav {
+  display: flex;
+  gap: 2px;
+}
+
+.pop-nav button {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mut);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pop-nav button:hover {
+  background: var(--soft);
+  color: var(--fg);
+}
+
+.pop-g {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pop-g .wd {
+  font-weight: 500;
+  color: var(--mut);
+  font-size: 10px;
+  padding-bottom: 2px;
+}
+
+.pop-g button,
+.pop-g .blank {
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.pop-g button {
+  position: relative;
+  cursor: pointer;
+}
+
+.pop-g button:hover:not(.future):not(.sel) {
+  background: var(--soft);
+}
+
+.pop-g button.future {
+  color: var(--mut);
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pop-g button.filled::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--mut);
+  transform: translateX(-50%);
+}
+
+.pop-g button.today {
+  color: var(--acc);
+  font-weight: 700;
+}
+
+.pop-g button.sel {
+  background: var(--acc);
+  color: var(--on-acc);
+  font-weight: 600;
+}
+
 .msg[hidden],
 .forgot[hidden],
 .confirm[hidden],
-.ok[hidden] {
+.ok[hidden],
+.pop[hidden] {
   display: none;
+  pointer-events: none;
 }
 
 .confirm {
