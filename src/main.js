@@ -1,17 +1,45 @@
+import {
+  WEEKDAY_INITIALS,
+  addDays,
+  canSelect,
+  chipView,
+  filledDates,
+  frenchDate,
+  monthGrid,
+  monthOf,
+  monthTitle,
+  shiftMonth,
+  shortcutState,
+} from "./calendar.js";
 import { savesOnEnter } from "./keys.js";
 import { saveBlocks } from "./save.js";
 
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
 
-let weighDate = "";
-let intakeDate = "";
-let weighLabel = "";
-let intakeLabel = "";
+let proposedWeigh = "";
+let proposedIntake = "";
+let chosenWeigh = null;
+let chosenIntake = null;
+let todayIso = "";
+let forgottenYesterday = false;
+let filledWeigh = [];
+let filledIntake = [];
 let seenWeighDate = null;
 let seenIntakeDate = null;
+let openKind = null;
+let viewYear = 2026;
+let viewMonth = 1;
 let queue = [];
 let busy = false;
+
+function weighDateNow() {
+  return chosenWeigh ?? proposedWeigh;
+}
+
+function intakeDateNow() {
+  return chosenIntake ?? proposedIntake;
+}
 
 function errorText(e) {
   if (typeof e === "string") return e;
@@ -23,12 +51,37 @@ function groupKcal(n) {
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
 }
 
-function setChip(id, when, label) {
+function paintChip(id, kind) {
   const el = $(id);
+  const date = kind === "weigh" ? weighDateNow() : intakeDateNow();
+  const proposed = kind === "weigh" ? proposedWeigh : proposedIntake;
+  const view = chipView({
+    date,
+    proposed,
+    today: todayIso,
+    forgottenProposed: kind === "intake" && forgottenYesterday,
+  });
   el.replaceChildren();
   const strong = document.createElement("b");
-  strong.textContent = when;
-  el.append(strong, ` · ${label}`);
+  strong.textContent = view.strong;
+  el.append(strong);
+  if (view.rest) el.append(view.rest);
+  const chevron = document.createElement("span");
+  chevron.className = "cv";
+  chevron.setAttribute("aria-hidden", "true");
+  chevron.textContent = "▾";
+  el.append(chevron);
+  el.classList.toggle("warn", view.forgotten);
+  el.classList.toggle("moved", view.moved);
+  el.classList.toggle("open", openKind === kind);
+  el.dataset.date = date;
+  el.setAttribute("aria-expanded", openKind === kind ? "true" : "false");
+  if (kind === "intake") $("forgot").hidden = !view.forgotten;
+}
+
+function paintChips() {
+  paintChip("weigh-chip", "weigh");
+  paintChip("intake-chip", "intake");
 }
 
 function setSubtitle(text) {
@@ -99,26 +152,26 @@ function renderHistory(days) {
 }
 
 function render(listing) {
-  if (seenIntakeDate !== null && listing.intakeDate !== seenIntakeDate) {
+  if (seenIntakeDate !== null && listing.intakeDate !== seenIntakeDate && chosenIntake === null) {
     for (const id of ["protein", "carbs", "fat", "water"]) $(id).value = "";
     $("saved").hidden = true;
   }
-  if (seenWeighDate !== null && listing.weighInDate !== seenWeighDate) {
+  if (seenWeighDate !== null && listing.weighInDate !== seenWeighDate && chosenWeigh === null) {
     $("weight").value = "";
     $("fasted").checked = true;
     $("saved").hidden = true;
   }
   seenIntakeDate = listing.intakeDate;
   seenWeighDate = listing.weighInDate;
-  weighDate = listing.weighInDate;
-  intakeDate = listing.intakeDate;
-  weighLabel = listing.weighInLabel;
-  intakeLabel = listing.intakeLabel;
+  proposedWeigh = listing.weighInDate;
+  proposedIntake = listing.intakeDate;
+  todayIso = listing.today;
+  forgottenYesterday = listing.forgottenYesterday;
+  filledWeigh = filledDates(listing.days, "weigh");
+  filledIntake = filledDates(listing.days, "intake");
   renderHeadline(listing);
-  setChip("weigh-chip", listing.weighInWhen, listing.weighInLabel);
-  setChip("intake-chip", listing.intakeWhen, listing.intakeLabel);
-  $("forgot").hidden = !listing.forgottenYesterday;
-  $("intake-chip").classList.toggle("warn", listing.forgottenYesterday);
+  paintChips();
+  if (openKind) renderPop();
   renderHistory(listing.days);
 }
 
@@ -142,6 +195,8 @@ function showBlockError(block, message) {
   el.textContent = message;
   el.hidden = false;
   $("entry").classList.add("bad");
+  // A refused date is not a bad number: leave the typed fields as they are.
+  if (message.startsWith("La date ")) return;
   if (block === "weigh") {
     $("weight").classList.add("bad");
     return;
@@ -247,19 +302,20 @@ async function saveAll() {
   busy = true;
   clearErrors();
   $("saved").hidden = true;
+  closePicker();
   const weighSnap = {
     weightText: $("weight").value,
     fasted: $("fasted").checked,
-    date: weighDate,
-    label: weighLabel,
+    date: weighDateNow(),
+    label: frenchDate(weighDateNow()),
   };
   const intakeSnap = {
     proteinText: $("protein").value,
     carbsText: $("carbs").value,
     fatText: $("fat").value,
     waterText: $("water").value,
-    date: intakeDate,
-    label: intakeLabel,
+    date: intakeDateNow(),
+    label: frenchDate(intakeDateNow()),
   };
   const fields = {
     weight: weighSnap.weightText,
@@ -304,9 +360,129 @@ async function onReplace() {
   }
 }
 
+function renderPop() {
+  const selected = openKind === "weigh" ? weighDateNow() : intakeDateNow();
+  const filled = new Set(openKind === "weigh" ? filledWeigh : filledIntake);
+  $("date-pop-title").textContent = monthTitle(viewYear, viewMonth);
+  const shortcuts = shortcutState(selected, todayIso);
+  $("date-today").classList.toggle("sel", shortcuts.today);
+  $("date-yesterday").classList.toggle("sel", shortcuts.yesterday);
+  const grid = $("date-pop-grid");
+  grid.replaceChildren();
+  for (const letter of WEEKDAY_INITIALS) {
+    const cell = document.createElement("span");
+    cell.className = "wd";
+    cell.textContent = letter;
+    grid.append(cell);
+  }
+  for (const iso of monthGrid(viewYear, viewMonth)) {
+    if (!iso) {
+      const blank = document.createElement("span");
+      blank.className = "blank";
+      grid.append(blank);
+      continue;
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = String(Number(iso.slice(8)));
+    const future = !canSelect(iso, todayIso);
+    const selectedDay = iso === selected;
+    button.classList.toggle("future", future);
+    button.classList.toggle("today", iso === todayIso);
+    button.classList.toggle("sel", selectedDay);
+    button.classList.toggle("filled", filled.has(iso) && !selectedDay);
+    if (future) button.setAttribute("aria-disabled", "true");
+    button.addEventListener("click", () => onDay(iso));
+    grid.append(button);
+  }
+}
+
+function openPicker(kind) {
+  openKind = kind;
+  const current = monthOf(kind === "weigh" ? weighDateNow() : intakeDateNow());
+  viewYear = current.year;
+  viewMonth = current.month;
+  const host = $(kind === "weigh" ? "weigh-chip" : "intake-chip").parentElement;
+  host.appendChild($("date-pop"));
+  $("date-pop").hidden = false;
+  renderPop();
+  paintChips();
+}
+
+function closePicker() {
+  if (!openKind && $("date-pop").hidden) return;
+  openKind = null;
+  $("date-pop").hidden = true;
+  paintChips();
+}
+
+function togglePicker(kind) {
+  if (openKind === kind) closePicker();
+  else openPicker(kind);
+}
+
+function selectDay(kind, iso) {
+  if (kind === "weigh") chosenWeigh = iso === proposedWeigh ? null : iso;
+  else chosenIntake = iso === proposedIntake ? null : iso;
+  $("saved").hidden = true;
+  clearErrors();
+  closePicker();
+}
+
+// D5: a future day is not selected. The command answers in French and the
+// typed values stay, because this path does not refresh the form.
+async function rejectFuture(kind, iso) {
+  closePicker();
+  clearErrors();
+  try {
+    if (kind === "weigh") {
+      await invoke("save_weigh_in", {
+        weightText: $("weight").value,
+        fasted: $("fasted").checked,
+        date: iso,
+        replace: false,
+      });
+    } else {
+      await invoke("save_intake", {
+        proteinText: $("protein").value,
+        carbsText: $("carbs").value,
+        fatText: $("fat").value,
+        waterText: $("water").value,
+        date: iso,
+        replace: false,
+      });
+    }
+  } catch (e) {
+    showBlockError(kind, errorText(e));
+  }
+}
+
+function onDay(iso) {
+  const kind = openKind;
+  if (!kind) return;
+  if (!canSelect(iso, todayIso)) {
+    void rejectFuture(kind, iso);
+    return;
+  }
+  selectDay(kind, iso);
+}
+
+function stepMonth(delta) {
+  const next = shiftMonth(viewYear, viewMonth, delta);
+  if (next.year === viewYear && next.month === viewMonth) return;
+  viewYear = next.year;
+  viewMonth = next.month;
+  renderPop();
+}
+
 document.addEventListener(
   "keydown",
   (event) => {
+    if (event.key === "Escape" && openKind) {
+      event.preventDefault();
+      closePicker();
+      return;
+    }
     if (event.key !== "Enter") return;
     event.preventDefault();
     if (savesOnEnter(event)) saveAll();
@@ -316,6 +492,21 @@ document.addEventListener(
 
 $("entry").addEventListener("submit", (event) => event.preventDefault());
 $("save").addEventListener("click", saveAll);
+$("weigh-chip").addEventListener("click", () => togglePicker("weigh"));
+$("intake-chip").addEventListener("click", () => togglePicker("intake"));
+$("date-today").addEventListener("click", () => onDay(todayIso));
+$("date-yesterday").addEventListener("click", () => onDay(addDays(todayIso, -1)));
+$("date-prev").addEventListener("click", () => stepMonth(-1));
+$("date-next").addEventListener("click", () => stepMonth(1));
+document.addEventListener("click", (event) => {
+  if (!openKind) return;
+  const target = event.target;
+  if ($("date-pop").contains(target)) return;
+  if (target.closest?.(".chip.pick")) return;
+  // Opening repaints the chip and detaches the node that received the click.
+  if (!target.isConnected) return;
+  closePicker();
+});
 $("confirm-replace").addEventListener("click", onReplace);
 $("confirm-cancel").addEventListener("click", () => {
   queue.shift();

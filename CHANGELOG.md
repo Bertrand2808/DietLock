@@ -6,6 +6,7 @@ All notable changes to DietLock are listed here. Format based on [Keep a Changel
 
 ### Changed
 
+- Each entry row's date can be changed before saving. The chip opens a calendar with today, yesterday and past days. A future date is refused in French, and what was typed stays.
 - The home screen is one card: today's weigh-in, the proposed intake and water, the weight trend, and 30 days of weight, energy and water.
 - A fasted weigh-in at least 3 kg from the previous day's trend is marked in the history.
 - The screen follows the system light and dark appearance. Colours are CSS variables.

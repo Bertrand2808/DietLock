@@ -16,7 +16,15 @@
       <form id="entry" class="card" novalidate>
         <div class="row">
           <div class="when">
-            <span class="chip" id="weigh-chip"></span>
+            <button
+              type="button"
+              class="chip pick"
+              id="weigh-chip"
+              tabindex="-1"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-label="Date de la pesée"
+            ></button>
           </div>
           <label class="field">
             <input
@@ -38,7 +46,15 @@
 
         <div class="row">
           <div class="when">
-            <span class="chip" id="intake-chip"></span>
+            <button
+              type="button"
+              class="chip pick"
+              id="intake-chip"
+              tabindex="-1"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-label="Date de l'alimentation"
+            ></button>
             <span class="forgot" id="forgot" hidden>hier oublié</span>
           </div>
           <label class="field">
@@ -98,6 +114,21 @@
             <button id="confirm-replace" type="button">Remplacer</button>
             <button id="confirm-cancel" type="button">Annuler</button>
           </div>
+        </div>
+
+        <div class="pop" id="date-pop" hidden role="dialog" aria-label="Choisir la date">
+          <div class="pop-q">
+            <button type="button" id="date-today">Aujourd'hui</button>
+            <button type="button" id="date-yesterday">Hier</button>
+          </div>
+          <div class="pop-m">
+            <span id="date-pop-title"></span>
+            <span class="pop-nav">
+              <button type="button" id="date-prev" aria-label="Mois précédent">‹</button>
+              <button type="button" id="date-next" aria-label="Mois suivant">›</button>
+            </span>
+          </div>
+          <div class="pop-g" id="date-pop-grid"></div>
         </div>
 
         <div class="bar">
