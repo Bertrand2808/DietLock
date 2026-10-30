@@ -196,7 +196,7 @@ function showBlockError(block, message) {
   el.hidden = false;
   $("entry").classList.add("bad");
   // A refused date is not a bad number: leave the typed fields as they are.
-  if (message.startsWith("La date ")) return;
+  if (message.startsWith("La date ") || message.includes("est dans le futur")) return;
   if (block === "weigh") {
     $("weight").classList.add("bad");
     return;

@@ -73,7 +73,11 @@ test("a future day cannot be selected", () => {
   assert.equal(canSelect("2026-10-31", TODAY), false);
   assert.equal(canSelect(TODAY, TODAY), true);
   assert.equal(canSelect("2026-10-28", TODAY), true);
-  assert.equal(futureDateMessage("2026-10-31"), "La date 2026-10-31 est dans le futur.");
+  assert.equal(frenchDate("2026-10-31"), "sam. 31 oct.");
+  assert.equal(
+    futureDateMessage("2026-10-31"),
+    "sam. 31 oct. est dans le futur, choisis aujourd'hui ou avant.",
+  );
 });
 
 test("an untouched forgotten yesterday keeps its mark", () => {

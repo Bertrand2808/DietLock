@@ -68,7 +68,7 @@ export function canSelect(iso, today) {
  * The screen shows the text returned by the command; this is the same wording.
  */
 export function futureDateMessage(iso) {
-  return `La date ${iso} est dans le futur.`;
+  return `${frenchDate(iso)} est dans le futur, choisis aujourd'hui ou avant.`;
 }
 
 /** `ven. 30 oct.` */
