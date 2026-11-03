@@ -446,9 +446,7 @@ impl Listing {
         } else {
             let subtitle = match phrase {
                 Some(kcal) => format!("{kcal}. La tendance apparaîtra après 4 pesées à jeun."),
-                None => {
-                    "Pas encore de saisie. La tendance apparaîtra après 4 pesées à jeun.".to_owned()
-                }
+                None => "La tendance apparaîtra après 4 pesées à jeun.".to_owned(),
             };
             (String::new(), false, subtitle)
         };
