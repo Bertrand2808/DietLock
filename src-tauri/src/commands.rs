@@ -12,7 +12,9 @@ use dietlock_core::{
 use dietlock_store::{SaveError, Store};
 use tauri::State;
 
-use crate::view::{self, IntakeSaveOutcome, IntakeView, Listing, SaveOutcome, WeighInView};
+use crate::view::{
+    self, IntakeSaveOutcome, IntakeView, Listing, SaveOutcome, WeighInView, WeightScreen,
+};
 
 /// Current local day, read from the system clock.
 fn today() -> Result<Day, String> {
@@ -148,4 +150,19 @@ pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
         &intakes,
         trend,
     ))
+}
+
+/// Weight screen: one point per weigh-in and the trend of each day, over 30 days.
+/// The 15-day window is the same series, trimmed. The trend is `dietlock_core::trend`.
+#[tauri::command]
+pub fn weight_curve(store: State<'_, Mutex<Store>>) -> Result<WeightScreen, String> {
+    let today = today()?;
+    let store = lock(&store)?;
+    // Every saved weigh-in. The empty and single notices count the whole history,
+    // and a trend at the left edge of the chart reads six days before that edge.
+    let from = Day::parse("1000-01-01").map_err(|e| view::validation_message(&e))?;
+    let weigh_ins = store
+        .list_weigh_ins(from, today)
+        .map_err(|e| view::store_message(&e))?;
+    WeightScreen::new(today, &weigh_ins).map_err(|_| view::duplicate_date_message().to_owned())
 }

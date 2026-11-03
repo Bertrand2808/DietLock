@@ -12,7 +12,10 @@
       {
         "title": "DietLock",
         "width": 1080,
-        "height": 700
+        "height": 700,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 14, "y": 14 }
       }
     ],
     "security": {

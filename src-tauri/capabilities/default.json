@@ -1,0 +1,6 @@
+{
+  "identifier": "drag-window",
+  "description": "Lets the title bar move the window.",
+  "windows": ["main"],
+  "permissions": ["core:window:allow-start-dragging"]
+}
