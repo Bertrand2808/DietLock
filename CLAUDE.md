@@ -13,7 +13,7 @@ cargo deny check licenses # (requires cargo-deny installed locally)  Licence che
 
 CI (`.github/workflows/ci.yml`) runs fmt, clippy, and test on macOS, Windows and Ubuntu, then cargo-deny on Linux. Run the first three locally before pushing.
 
-The UI is raw HTML and JS (`src/index.html`, `src/main.js`, no framework or bundler) calling the Tauri commands through `window.__TAURI__` (`withGlobalTauri`). The CI does not launch the app: UI behaviour is checked by hand.
+The UI is raw HTML and JS (`src/index.html`, `src/main.js`, no framework or bundler) calling the Tauri commands through `window.__TAURI__` (`withGlobalTauri`). CI does not launch the app. Prove a UI change with `.cursor/skills/verify-dietlock` and put the screenshot plus the check output in the PR body. Prove a logic change with `cargo test` output in the PR body. Every PR includes one of those proofs.
 
 ## Architecture
 
