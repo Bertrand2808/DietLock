@@ -860,6 +860,22 @@ mod tests {
     }
 
     #[test]
+    fn a_trend_without_intake_names_the_fasted_average() {
+        let ws = [
+            weigh("2026-10-23", 820),
+            weigh("2026-10-24", 826),
+            weigh("2026-10-25", 830),
+            weigh("2026-10-26", 826),
+        ];
+        let today = day("2026-10-26");
+        let trend = trend(&ws, today).unwrap();
+        assert!(trend.is_some());
+        let saved = home("2026-10-26", 10, &ws, &[], trend);
+        assert!(saved.is_trend);
+        assert_eq!(saved.subtitle, "Moyenne à jeun sur 7 jours");
+    }
+
+    #[test]
     fn at_14h_the_screen_dates_the_intake_yesterday_and_shows_the_flag() {
         let today = day("2026-10-26");
         let proposed = proposed_intake_date(
