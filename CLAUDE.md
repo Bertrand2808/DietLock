@@ -9,6 +9,7 @@ cargo test # All tests
 cargo test -p dietlock-core # (or `-p dietlock-store`, `-p dietlock`) One crate
 cargo test -p dietlock-core weight_bounds # (substring match on test name)  One test
 cargo deny check licenses # (requires cargo-deny installed locally)  Licence check
+node --test src/*.test.js # Frontend tests, no browser
 ```
 
 CI (`.github/workflows/ci.yml`) runs fmt, clippy, and test on macOS, Windows and Ubuntu, then cargo-deny on Linux. Run the first three locally before pushing.

@@ -26,6 +26,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[4]
 BINARY = REPO / "target" / "debug" / "dietlock"
 APP_ID = "com.bertrand2808.dietlock"
+SCHEMA_VERSION = 2
+WINDOW = (1080, 700)
 INSTANCE_ROOT = Path("/tmp/dietlock-verify")
 EVIDENCE_ROOT = Path("/tmp/dietlock-verify-evidence")
 CURRENT = INSTANCE_ROOT / "current"
@@ -38,7 +40,7 @@ def main(argv: list[str]) -> int:
         print(
             "usage: dietlock-verify "
             "launch | doctor | eval EXPR | text | db | screenshot [PATH] | "
-            "check-today | cargo-test [-- CARGO_ARGS...] | cleanup"
+            "check-today | cargo-test [-- CARGO_ARGS...] | frontend-test | cleanup"
         )
         return 0 if len(argv) > 1 else 2
     cmd, args = argv[1], argv[2:]
@@ -51,6 +53,7 @@ def main(argv: list[str]) -> int:
         "screenshot": cmd_screenshot,
         "check-today": cmd_check_today,
         "cargo-test": cmd_cargo_test,
+        "frontend-test": cmd_frontend_test,
         "cleanup": cmd_cleanup,
     }
     if cmd not in commands:
@@ -255,7 +258,7 @@ def cmd_launch(_args: list[str]) -> int:
             display,
             "-screen",
             "0",
-            "1024x768x24",
+            "1280x800x24",
             "-ac",
             "+extension",
             "GLX",
@@ -364,15 +367,15 @@ def wait_until_ready(state: dict) -> None:
             detail = log.read_text()[-2000:] if log.is_file() else ""
             raise VerifyError(f"DietLock exited before it was usable\n{detail}")
         try:
-            trend = evaluate(state, 'document.getElementById("trend").textContent')
+            headline = evaluate(state, 'document.getElementById("headline").textContent')
         except VerifyError as exc:
             last = str(exc)
             time.sleep(0.25)
             continue
-        if isinstance(trend, str) and trend.strip():
-            print(f"ready trend: {trend.strip()}")
+        if isinstance(headline, str) and headline.strip():
+            print(f"ready headline: {headline.strip()}")
             return
-        last = f"trend still empty ({trend!r})"
+        last = f"headline still empty ({headline!r})"
         time.sleep(0.25)
     raise VerifyError(f"DietLock did not become usable within 20s: {last}")
 
@@ -411,8 +414,8 @@ def doctor_problems(state: dict) -> list[str]:
         problems.append(f"database missing: {state['db']}")
     else:
         version = schema_version(state)
-        if version != 1:
-            problems.append(f"schema user_version is {version}, expected 1")
+        if version != SCHEMA_VERSION:
+            problems.append(f"schema user_version is {version}, expected {SCHEMA_VERSION}")
     try:
         page = urllib.request.urlopen(state["inspector_url"], timeout=2).read().decode()
     except OSError as exc:
@@ -448,7 +451,7 @@ def db_rows(state: dict) -> tuple[list[tuple], list[tuple]]:
             "SELECT date, weight_tenth_kg, fasted FROM weigh_in ORDER BY date"
         ).fetchall()
         intake = con.execute(
-            "SELECT date, protein_g, carbs_g, fat_g, water_ml FROM intake ORDER BY date"
+            "SELECT date, protein_tenth_g, carbs_tenth_g, fat_tenth_g, water_ml FROM intake ORDER BY date"
         ).fetchall()
     finally:
         con.close()
@@ -730,6 +733,17 @@ def local_today() -> str:
     return dt.date.today().isoformat()
 
 
+def expected_greeting() -> str:
+    """Same cut as `view::greeting`: Bonjour from 05:00 until 18:00."""
+    hour = dt.datetime.now().hour
+    return "Bonjour." if 5 <= hour < 18 else "Bonsoir."
+
+
+def expected_intake_date(_today: str) -> str:
+    """Empty store: the intake chip stays on yesterday, including after noon."""
+    return (dt.date.today() - dt.timedelta(days=1)).isoformat()
+
+
 def ocr(path: Path) -> str:
     proc = subprocess.run(
         ["tesseract", str(path), "stdout", "-l", "fra", "--psm", "6"],
@@ -741,31 +755,63 @@ def ocr(path: Path) -> str:
     return proc.stdout
 
 
+TODAY_SNAPSHOT = """JSON.stringify({
+  title: document.title,
+  headline: document.getElementById("headline").textContent,
+  subtitle: document.getElementById("subhead").textContent,
+  todayTab: document.getElementById("tab-today").getAttribute("aria-selected"),
+  weightTab: document.getElementById("tab-weight").textContent.trim(),
+  todayHidden: document.getElementById("screen-today").hidden,
+  weightHidden: document.getElementById("screen-weight").hidden,
+  weighDate: document.getElementById("weigh-chip").dataset.date,
+  weighChip: document.getElementById("weigh-chip").innerText,
+  intakeDate: document.getElementById("intake-chip").dataset.date,
+  intakeChip: document.getElementById("intake-chip").innerText,
+  forgotHidden: document.getElementById("forgot").hidden,
+  fasted: document.getElementById("fasted").checked,
+  weighErrorHidden: document.getElementById("weigh-error").hidden,
+  weighError: document.getElementById("weigh-error").textContent,
+  intakeErrorHidden: document.getElementById("intake-error").hidden,
+  savedHidden: document.getElementById("saved").hidden,
+  confirmHidden: document.getElementById("confirm").hidden,
+  history: document.getElementById("hist").innerText,
+  historyRows: document.querySelectorAll("#hist .day").length
+})"""
+
+WEIGHT_SNAPSHOT = """JSON.stringify({
+  headline: document.getElementById("w-headline").textContent,
+  subtitle: document.getElementById("w-sub").textContent,
+  range: document.getElementById("w-range").textContent,
+  count: document.getElementById("w-count").textContent,
+  chart: document.getElementById("chartbox").innerText,
+  todayHidden: document.getElementById("screen-today").hidden,
+  weightHidden: document.getElementById("screen-weight").hidden,
+  weightTab: document.getElementById("tab-weight").getAttribute("aria-selected")
+})"""
+
+
+def read_json_screen(state: dict, expression: str) -> dict:
+    snapshot = evaluate(state, expression)
+    if not isinstance(snapshot, str):
+        raise VerifyError(f"screen snapshot was not text: {snapshot!r}")
+    return json.loads(snapshot)
+
+
 def cmd_check_today(_args: list[str]) -> int:
     state = require_state()
     problems = doctor_problems(state)
     directory = evidence_dir(state)
+    evaluate(state, 'document.getElementById("tab-today").click(); "today"')
+    deadline = time.time() + 8
+    screen: dict = {}
+    while time.time() < deadline:
+        screen = read_json_screen(state, TODAY_SNAPSHOT)
+        if screen.get("headline") and screen.get("todayHidden") is False:
+            break
+        time.sleep(0.25)
     shot = directory / "today.png"
     width, height = capture_window(state, shot)
     png_width, png_height = png_size(shot)
-    snapshot = evaluate(
-        state,
-        """JSON.stringify({
-          title: document.title,
-          trend: document.getElementById("trend").textContent,
-          date: document.getElementById("date").value,
-          errorHidden: document.getElementById("error").hidden,
-          error: document.getElementById("error").textContent,
-          count: document.getElementById("days").children.length,
-          first: document.getElementById("days").firstElementChild
-            ? document.getElementById("days").firstElementChild.textContent
-            : "",
-          headings: [...document.querySelectorAll("h2")].map((node) => node.textContent)
-        })""",
-    )
-    if not isinstance(snapshot, str):
-        raise VerifyError(f"screen snapshot was not text: {snapshot!r}")
-    screen = json.loads(snapshot)
     (directory / "today.dom.json").write_text(
         json.dumps(screen, ensure_ascii=False, indent=2) + "\n"
     )
@@ -773,29 +819,56 @@ def cmd_check_today(_args: list[str]) -> int:
     (directory / "today.dom.txt").write_text(str(text) + "\n")
     recognized = ocr(shot)
     (directory / "today.ocr.txt").write_text(recognized)
-    weigh, intake = db_rows(state)
+    evaluate(state, 'document.getElementById("tab-weight").click(); "opened"')
+    weight: dict = {}
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        weight = read_json_screen(state, WEIGHT_SNAPSHOT)
+        if weight.get("headline"):
+            break
+        time.sleep(0.25)
+    (directory / "weight.dom.json").write_text(
+        json.dumps(weight, ensure_ascii=False, indent=2) + "\n"
+    )
+    weigh, intake_rows = db_rows(state)
     version = schema_version(state)
     today = local_today()
-    expected_first = f"{screen.get('date')} : pas de pesée | pas d'alimentation"
-    expected_headings = ["Pesée", "Alimentation", "Tendance du jour", "30 derniers jours"]
+    greeting = expected_greeting()
+    intake_date = expected_intake_date(today)
+    forgot_hidden = dt.datetime.now().hour < 4
+    empty_subtitle = "Pas encore de saisie. La tendance apparaîtra après 4 pesées à jeun."
     ocr_flat = " ".join(recognized.split())
+    history = screen.get("history") or ""
     checks = [
         ("doctor", not problems, "; ".join(problems)),
         ("title", screen.get("title") == "DietLock", repr(screen.get("title"))),
-        ("headings", screen.get("headings") == expected_headings, repr(screen.get("headings"))),
-        ("trend", screen.get("trend") == "pas encore de tendance", repr(screen.get("trend"))),
-        ("weigh-in date is today", screen.get("date") == today, repr(screen.get("date"))),
-        ("history length", screen.get("count") == 30, repr(screen.get("count"))),
-        ("first day empty", screen.get("first") == expected_first, repr(screen.get("first"))),
-        ("no error", screen.get("errorHidden") is True and screen.get("error") == "", repr(screen.get("error"))),
-        ("schema", version == 1, repr(version)),
+        ("greeting", screen.get("headline") == greeting, repr(screen.get("headline"))),
+        ("empty subtitle", screen.get("subtitle") == empty_subtitle, repr(screen.get("subtitle"))),
+        ("today tab selected", screen.get("todayTab") == "true", repr(screen.get("todayTab"))),
+        ("weight tab label", screen.get("weightTab") == "Poids", repr(screen.get("weightTab"))),
+        ("today screen visible", screen.get("todayHidden") is False, repr(screen.get("todayHidden"))),
+        ("weight screen hidden", screen.get("weightHidden") is True, repr(screen.get("weightHidden"))),
+        ("weigh-in chip is today", screen.get("weighDate") == today and "Aujourd'hui" in (screen.get("weighChip") or ""), repr(screen.get("weighChip"))),
+        ("intake chip date", screen.get("intakeDate") == intake_date, repr(screen.get("intakeDate"))),
+        ("forgotten mark", screen.get("forgotHidden") is forgot_hidden, repr(screen.get("forgotHidden"))),
+        ("fasted checked", screen.get("fasted") is True, repr(screen.get("fasted"))),
+        ("no weigh error", screen.get("weighErrorHidden") is True and screen.get("weighError") == "", repr(screen.get("weighError"))),
+        ("no intake error", screen.get("intakeErrorHidden") is True, repr(screen.get("intakeErrorHidden"))),
+        ("save status hidden", screen.get("savedHidden") is True, repr(screen.get("savedHidden"))),
+        ("confirm hidden", screen.get("confirmHidden") is True, repr(screen.get("confirmHidden"))),
+        ("empty history", "Ta première journée apparaîtra ici." in history and "Commence par ton poids de ce matin" in history and screen.get("historyRows") == 0, repr(history)),
+        ("schema", version == SCHEMA_VERSION, repr(version)),
         ("no weigh-in rows", len(weigh) == 0, repr(weigh)),
-        ("no intake rows", len(intake) == 0, repr(intake)),
-        ("png size", (png_width, png_height) == (width, height) == (800, 600), f"{png_width}x{png_height}"),
-        ("ocr trend heading", "Tendance du jour" in ocr_flat, "missing from OCR"),
-        ("ocr empty trend", "pas encore de tendance" in ocr_flat, "missing from OCR"),
-        ("ocr history heading", "30 derniers jours" in ocr_flat, "missing from OCR"),
-        ("ocr empty weigh-in", "pas de pesée" in recognized or "pas de pesee" in recognized, "missing from OCR"),
+        ("no intake rows", len(intake_rows) == 0, repr(intake_rows)),
+        ("png size", (png_width, png_height) == (width, height) == WINDOW, f"{png_width}x{png_height} window {width}x{height}"),
+        ("ocr empty copy", "Pas encore de saisie" in ocr_flat and "Aujourd" in ocr_flat, "missing from OCR"),
+        ("ocr empty history", "première journée" in ocr_flat, "missing from OCR"),
+        ("ocr weight tab", "Poids" in ocr_flat, "missing from OCR"),
+        ("weight screen headline", weight.get("headline") == "Pas encore de courbe.", repr(weight.get("headline"))),
+        ("weight screen subtitle", weight.get("subtitle") == "La tendance apparaîtra après 4 pesées à jeun.", repr(weight.get("subtitle"))),
+        ("weight screen range", weight.get("range") == "15 derniers jours" and weight.get("count") == "aucune pesée", repr((weight.get("range"), weight.get("count")))),
+        ("weight screen chart", "Ta courbe se dessinera ici." in (weight.get("chart") or ""), repr(weight.get("chart"))),
+        ("weight tab selected", weight.get("weightTab") == "true" and weight.get("weightHidden") is False and weight.get("todayHidden") is True, repr(weight.get("weightTab"))),
     ]
     failed = [name for name, ok, _detail in checks if not ok]
     lines = ["check-today PASS" if not failed else "check-today FAIL"]
@@ -806,6 +879,29 @@ def cmd_check_today(_args: list[str]) -> int:
     (directory / "check-today.txt").write_text(report)
     print(report, end="")
     return 1 if failed else 0
+
+
+def cmd_frontend_test(_args: list[str]) -> int:
+    directory = evidence_dir(require_state() if run_id_from_env() else None)
+    files = [
+        "src/calendar.test.js",
+        "src/chart.test.js",
+        "src/keys.test.js",
+        "src/save.test.js",
+    ]
+    command = ["node", "--test", *files]
+    proc = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+    body = (
+        f"$ {' '.join(command)}\n"
+        f"exit: {proc.returncode}\n"
+        f"--- stdout ---\n{proc.stdout}"
+        f"--- stderr ---\n{proc.stderr}"
+    )
+    path = directory / "frontend-test.txt"
+    path.write_text(body)
+    sys.stdout.write(body)
+    print(f"evidence {path}")
+    return proc.returncode
 
 
 def cmd_cargo_test(args: list[str]) -> int:
