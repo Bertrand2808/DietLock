@@ -7,7 +7,17 @@
     <script type="module" src="main.js"></script>
   </head>
   <body>
-    <main class="col">
+    <header class="titlebar">
+      <div class="seg lg" role="tablist" aria-label="Écran">
+        <button type="button" id="tab-today" role="tab" aria-selected="true" aria-controls="screen-today">
+          Aujourd'hui
+        </button>
+        <button type="button" id="tab-weight" role="tab" aria-selected="false" aria-controls="screen-weight">
+          Poids
+        </button>
+      </div>
+    </header>
+    <main class="col" id="screen-today">
       <header class="head">
         <h1 id="headline" class="trend"></h1>
         <p id="subhead" class="sub"></p>
@@ -139,6 +149,30 @@
       </form>
 
       <section class="hist" id="hist" aria-label="Historique"></section>
+    </main>
+
+    <main class="col" id="screen-weight" hidden>
+      <header class="head">
+        <h1 id="w-headline" class="trend"></h1>
+        <p id="w-sub" class="sub"></p>
+      </header>
+      <section class="card weight-card">
+        <div class="weight-top">
+          <h2><span id="w-range">15 derniers jours</span> <span id="w-count"></span></h2>
+          <div class="seg" id="span-seg" role="group" aria-label="Période">
+            <button type="button" data-span="15" aria-pressed="true">15 j</button>
+            <button type="button" data-span="30" aria-pressed="false">30 j</button>
+          </div>
+        </div>
+        <div class="chartbox" id="chartbox"></div>
+        <div class="weight-foot">
+          <div class="legend">
+            <span><i class="lp"></i>pesée</span>
+            <span><i class="lt"></i>tendance, moyenne sur 7 jours</span>
+          </div>
+          <p class="hint" id="w-hint"></p>
+        </div>
+      </section>
     </main>
   </body>
 </html>

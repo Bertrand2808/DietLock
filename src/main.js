@@ -13,7 +13,8 @@ import {
   shiftMonth,
   shortcutState,
 } from "./calendar.js";
-import { savesOnEnter } from "./keys.js";
+import { renderChart } from "./chart.js";
+import { savesOnEnter, screenShortcut } from "./keys.js";
 import { saveBlocks } from "./save.js";
 
 const { invoke } = window.__TAURI__.core;
@@ -34,6 +35,12 @@ let viewYear = 2026;
 let viewMonth = 1;
 let queue = [];
 let busy = false;
+let screenName = "today";
+let span = 15;
+let curve = null;
+let curveLoaded = false;
+
+const mac = /\bMac/i.test(navigator.platform) || /\bMac/i.test(navigator.userAgent);
 
 function weighDateNow() {
   return chosenWeigh ?? proposedWeigh;
@@ -177,8 +184,178 @@ function render(listing) {
   renderHistory(listing.days);
 }
 
+function formatDelta(tenth) {
+  const sign = tenth < 0 ? "\u2212" : tenth > 0 ? "+" : "";
+  const abs = Math.abs(tenth);
+  return `${sign}${Math.floor(abs / 10)},${abs % 10} kg`;
+}
+
+function weighCount(n) {
+  if (n === 0) return "aucune pesée";
+  if (n === 1) return "1 pesée";
+  return `${n} pesées`;
+}
+
+function visibleDays() {
+  if (!curve) return [];
+  const take = Math.min(span, curve.days.length);
+  return curve.days.slice(curve.days.length - take);
+}
+
+function paintScreenTabs() {
+  const today = screenName === "today";
+  $("screen-today").hidden = !today;
+  $("screen-weight").hidden = today;
+  $("tab-today").setAttribute("aria-selected", today ? "true" : "false");
+  $("tab-weight").setAttribute("aria-selected", today ? "false" : "true");
+}
+
+function paintSpan() {
+  for (const button of $("span-seg").querySelectorAll("button")) {
+    button.setAttribute("aria-pressed", Number(button.dataset.span) === span ? "true" : "false");
+  }
+}
+
+function paintWeightHeadline() {
+  const headline = $("w-headline");
+  const sub = $("w-sub");
+  headline.replaceChildren();
+  sub.replaceChildren();
+  if (curve.trend) {
+    headline.classList.remove("greet");
+    const num = document.createElement("span");
+    num.className = "num";
+    num.textContent = curve.trend;
+    const unit = document.createElement("small");
+    unit.textContent = " kg de tendance";
+    headline.append(num, unit);
+    const delta = span === 15 ? curve.shortVariation : curve.longVariation;
+    const tail = "moyenne à jeun sur 7 jours";
+    if (delta == null) {
+      sub.textContent = tail;
+    } else {
+      const strong = document.createElement("b");
+      strong.textContent = formatDelta(delta);
+      sub.append(strong, ` en ${span} jours · ${tail}`);
+    }
+    return;
+  }
+  const notice = curve.notice;
+  if (notice?.kind === "empty") {
+    headline.classList.add("greet");
+    headline.textContent = notice.headline;
+    sub.textContent = notice.subtitle;
+    return;
+  }
+  if (notice?.kind === "single") {
+    headline.classList.remove("greet");
+    const num = document.createElement("span");
+    num.className = "num";
+    num.textContent = notice.weight;
+    const unit = document.createElement("small");
+    unit.textContent = notice.today ? " kg ce matin" : " kg";
+    headline.append(num, unit);
+  } else {
+    headline.classList.remove("greet");
+  }
+  sub.textContent = "La tendance apparaîtra après 4 pesées à jeun.";
+}
+
+function paintChartMessage(notice, days) {
+  if (notice?.kind !== "empty" && notice?.kind !== "single") return;
+  const box = document.createElement("div");
+  const body = document.createElement("div");
+  const small = document.createElement("small");
+  if (notice.kind === "empty") {
+    box.className = "chartmsg";
+    const key = mac ? "⌘1" : "Ctrl+1";
+    body.append(notice.chartTitle);
+    small.textContent = notice.chartNote.replace("Aujourd'hui,", `Aujourd'hui (${key}),`);
+  } else {
+    const index = days.findIndex((day) => day.weighTenthKg != null);
+    const onLeft = index === -1 || index > days.length / 2;
+    box.className = onLeft ? "chartmsg side" : "chartmsg";
+    body.append(notice.title);
+    const breakAt = notice.note.indexOf(" sur 7 jours");
+    if (breakAt === -1) {
+      small.textContent = notice.note;
+    } else {
+      small.append(notice.note.slice(0, breakAt));
+      small.append(document.createElement("br"));
+      small.append(notice.note.slice(breakAt + 1));
+    }
+  }
+  body.append(small);
+  box.append(body);
+  $("chartbox").append(box);
+}
+
+function renderWeight() {
+  if (!curve) return;
+  paintSpan();
+  paintWeightHeadline();
+  const days = visibleDays();
+  const n = days.filter((day) => day.weighTenthKg != null).length;
+  $("w-range").textContent = `${span} derniers jours`;
+  $("w-count").textContent = weighCount(n);
+  const hint = $("w-hint");
+  hint.replaceChildren();
+  const key = mac ? "⌘" : "Ctrl";
+  const piece = (digit, label) => {
+    const mod = document.createElement("kbd");
+    mod.textContent = key;
+    const num = document.createElement("kbd");
+    num.textContent = digit;
+    hint.append(mod, num, ` ${label}`);
+  };
+  piece("1", "Aujourd'hui · ");
+  piece("2", "Poids");
+  renderChart($("chartbox"), days, curve.notice, span);
+  paintChartMessage(curve.notice, days);
+}
+
+function renderWeightError(message) {
+  const box = $("chartbox");
+  box.replaceChildren();
+  const note = document.createElement("p");
+  note.className = "empty";
+  note.textContent = message;
+  box.append(note);
+}
+
+async function loadCurve() {
+  curve = await invoke("weight_curve");
+  curveLoaded = true;
+}
+
+async function showScreen(name) {
+  if (name !== "today") closePicker();
+  screenName = name;
+  paintScreenTabs();
+  if (name !== "weight") return;
+  if (!curveLoaded) {
+    try {
+      await loadCurve();
+    } catch (e) {
+      renderWeightError(errorText(e));
+      return;
+    }
+  }
+  renderWeight();
+}
+
 async function refresh() {
   render(await invoke("list_days"));
+  if (!curveLoaded) return;
+  try {
+    await loadCurve();
+  } catch (e) {
+    curve = null;
+    curveLoaded = false;
+    if (screenName === "weight") renderWeightError(errorText(e));
+    return;
+  }
+  if (screenName === "weight") renderWeight();
 }
 
 function clearErrors() {
@@ -470,6 +647,12 @@ function stepMonth(delta) {
 document.addEventListener(
   "keydown",
   (event) => {
+    const next = screenShortcut(event, mac);
+    if (next) {
+      event.preventDefault();
+      showScreen(next);
+      return;
+    }
     if (event.key === "Escape" && openKind) {
       event.preventDefault();
       closePicker();
@@ -482,6 +665,14 @@ document.addEventListener(
   true,
 );
 
+$("tab-today").addEventListener("click", () => showScreen("today"));
+$("tab-weight").addEventListener("click", () => showScreen("weight"));
+$("span-seg").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  span = Number(button.dataset.span);
+  if (curve) renderWeight();
+});
 $("entry").addEventListener("submit", (event) => event.preventDefault());
 $("save").addEventListener("click", saveAll);
 $("weigh-chip").addEventListener("click", () => togglePicker("weigh"));

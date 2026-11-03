@@ -2,8 +2,9 @@
 //! Pure functions, so they are unit-tested without a running app.
 
 use dietlock_core::{
-    Day, Intake, MACRO_G_MAX, ProposedIntake, TREND_WINDOW_DAYS, ValidationError,
-    WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert, display_tenth_kg, energy_kcal,
+    Day, DuplicateDate, Intake, MACRO_G_MAX, ProposedIntake, TREND_WINDOW_DAYS, ValidationError,
+    WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert, display_tenth_kg, energy_kcal, trend,
+    variation,
 };
 use dietlock_store::StoreError;
 use serde::Serialize;
@@ -183,16 +184,171 @@ fn format_kcal(kcal: u32) -> String {
     out.chars().rev().collect()
 }
 
-/// `dim. 25 oct.`.
-pub fn french_date(day: Day) -> String {
-    const WEEKDAYS: [&str; 7] = ["dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."];
+fn french_month(month: u8) -> &'static str {
     const MONTHS: [&str; 12] = [
         "janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.",
         "déc.",
     ];
+    MONTHS[usize::from(month) - 1]
+}
+
+/// `dim. 25 oct.`.
+pub fn french_date(day: Day) -> String {
+    const WEEKDAYS: [&str; 7] = ["dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."];
     let weekday = WEEKDAYS[usize::from(day.weekday_index())];
-    let month = MONTHS[usize::from(day.month_number()) - 1];
-    format!("{weekday} {} {month}", day.day_number())
+    format!(
+        "{weekday} {} {}",
+        day.day_number(),
+        french_month(day.month_number())
+    )
+}
+
+/// `25 oct.`, the chart axis form of [`french_date`].
+fn axis_label(day: Day) -> String {
+    format!("{} {}", day.day_number(), french_month(day.month_number()))
+}
+
+/// Days in the weight chart. The screen opens on the short window.
+pub const CURVE_SHORT_DAYS: u16 = 15;
+/// Longest window the weight chart offers.
+pub const CURVE_LONG_DAYS: u16 = 30;
+
+/// One calendar day of the weight chart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurveDay {
+    pub date: String,
+    /// Day and month, e.g. `20 oct.`.
+    pub label: String,
+    /// Weigh-in of that day, in tenths of a kg. Present whether or not it was fasted.
+    pub weigh_tenth_kg: Option<u16>,
+    /// Displayed trend of that day, in tenths of a kg.
+    /// `None` when the day has fewer than 4 fasted weigh-ins in its window (T3).
+    pub trend_tenth_kg: Option<i32>,
+}
+
+/// The plotted window: one row per calendar day, oldest first, plus the change
+/// from the first day to the last.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeightCurve {
+    pub days: Vec<CurveDay>,
+    /// Displayed change across the window, in tenths of a kg.
+    /// `None` when the first day or today has no trend (T8).
+    pub variation_tenth_kg: Option<i32>,
+}
+
+impl WeightCurve {
+    /// `days` calendar days ending at `today`, inclusive.
+    /// `weigh_ins` may extend before the window. The trend of each day is
+    /// [`dietlock_core::trend`]. A duplicate date is refused, as there.
+    pub fn build(today: Day, weigh_ins: &[WeighIn], days: u16) -> Result<Self, DuplicateDate> {
+        let mut curve_days = Vec::with_capacity(usize::from(days));
+        for ago in (0..days).rev() {
+            let Some(date) = today.minus_days(ago) else {
+                continue;
+            };
+            let trend_tenth_kg = trend(weigh_ins, date)?
+                .and_then(|hundredth| i32::try_from(hundredth).ok())
+                .map(display_tenth_kg);
+            let weigh_tenth_kg = weigh_ins
+                .iter()
+                .find(|w| w.date() == date)
+                .map(|w| w.weight_tenth_kg());
+            curve_days.push(CurveDay {
+                label: axis_label(date),
+                date: date.to_string(),
+                weigh_tenth_kg,
+                trend_tenth_kg,
+            });
+        }
+        // The window spans `days` dates, so its two ends are `days - 1` apart.
+        let variation_tenth_kg = if days <= 1 {
+            None
+        } else {
+            variation(weigh_ins, today, days - 1)?
+        };
+        Ok(Self {
+            days: curve_days,
+            variation_tenth_kg,
+        })
+    }
+}
+
+/// The chart states that are a sentence rather than a series.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum CurveNotice {
+    Empty {
+        headline: String,
+        subtitle: String,
+        chart_title: String,
+        chart_note: String,
+    },
+    Single {
+        /// Displayed weight, e.g. `78,4`.
+        weight: String,
+        /// The only weigh-in falls on today.
+        today: bool,
+        title: String,
+        note: String,
+    },
+}
+
+/// Weight screen: thirty days of points and trends, both window variations,
+/// and the empty or single-weigh-in notice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeightScreen {
+    pub days: Vec<CurveDay>,
+    /// [`variation`] over the 15-day window.
+    pub short_variation: Option<i32>,
+    /// [`variation`] over the 30-day window.
+    pub long_variation: Option<i32>,
+    /// Today's trend as displayed, `None` when there is none yet.
+    pub trend: Option<String>,
+    pub notice: Option<CurveNotice>,
+}
+
+impl WeightScreen {
+    /// `weigh_ins` is every saved weigh-in, not only the chart window.
+    /// The empty and single notices depend on that total.
+    pub fn new(today: Day, weigh_ins: &[WeighIn]) -> Result<Self, DuplicateDate> {
+        let short = WeightCurve::build(today, weigh_ins, CURVE_SHORT_DAYS)?;
+        let long = WeightCurve::build(today, weigh_ins, CURVE_LONG_DAYS)?;
+        let trend_label = long
+            .days
+            .last()
+            .and_then(|d| d.trend_tenth_kg)
+            .map(format_tenth_kg);
+        let notice = match weigh_ins {
+            [] => Some(CurveNotice::Empty {
+                headline: "Pas encore de courbe.".to_owned(),
+                subtitle: "La tendance apparaîtra après 4 pesées à jeun.".to_owned(),
+                chart_title: "Ta courbe se dessinera ici.".to_owned(),
+                chart_note: "Pèse-toi dans Aujourd'hui, elle commencera là.".to_owned(),
+            }),
+            [only] => Some(CurveNotice::Single {
+                weight: format_tenth_kg(i32::from(only.weight_tenth_kg())),
+                today: only.date() == today,
+                title: "Une pesée pour l'instant.".to_owned(),
+                note: "La tendance se trace dès 4 pesées à jeun sur 7 jours. La prochaine, demain matin."
+                    .to_owned(),
+            }),
+            _ => None,
+        };
+        Ok(Self {
+            days: long.days,
+            short_variation: short.variation_tenth_kg,
+            long_variation: long.variation_tenth_kg,
+            trend: trend_label,
+            notice,
+        })
+    }
 }
 
 fn relative_name(date: Day, today: Day) -> &'static str {
@@ -406,8 +562,9 @@ pub fn duplicate_date_message() -> &'static str {
 mod tests {
     use super::*;
     use dietlock_core::{
-        IntakePresence, SwitchHour, ValidationError, check_not_future, parse_macro_tenth_g,
-        parse_water_ml, parse_weight_tenth_kg, proposed_intake_date,
+        IntakePresence, SwitchHour, ValidationError, check_not_future, display_tenth_kg,
+        parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg, proposed_intake_date, trend,
+        variation,
     };
     use dietlock_store::StoreError;
     use time::Time;
@@ -781,6 +938,132 @@ mod tests {
         assert_eq!(late.detail.as_deref(), Some("pas à jeun"));
         let calm = l.days.iter().find(|d| d.date == "2026-10-15").unwrap();
         assert!(!calm.alert);
+    }
+
+    /// Points and the displayed trend for each day of a window ending at `today`.
+    /// The trend is the one `dietlock_core` already computes.
+    #[test]
+    fn curve_lists_each_day_with_its_weigh_in_and_its_trend() {
+        let today = day("2026-10-12");
+        // Four 79,0 kg weigh-ins make a trend of 79,0 on 28 Sept, the first day of a 15-day window.
+        // The October cluster is the documented 80,3 case and sits inside 6–12 Oct, so it does not
+        // change 28 Sept. 27 Sept has only three of those weigh-ins and therefore no trend:
+        // the variation is over 14 days, not 15.
+        let ws = vec![
+            weigh("2026-09-25", 790),
+            weigh("2026-09-26", 790),
+            weigh("2026-09-27", 790),
+            weigh("2026-09-28", 790),
+            weigh("2026-10-09", 800),
+            weigh("2026-10-10", 810),
+            weigh("2026-10-11", 795),
+            weigh("2026-10-12", 805),
+        ];
+        let curve = WeightCurve::build(today, &ws, 15).unwrap();
+        assert_eq!(curve.days.len(), 15);
+        assert_eq!(curve.days[0].date, "2026-09-28");
+        assert_eq!(curve.days[0].weigh_tenth_kg, Some(790));
+        assert_eq!(curve.days[0].trend_tenth_kg, Some(790));
+        assert_eq!(curve.days[14].date, "2026-10-12");
+        assert_eq!(curve.days[14].weigh_tenth_kg, Some(805));
+        assert_eq!(curve.days[14].trend_tenth_kg, Some(803));
+        let october_11 = curve.days.iter().find(|d| d.date == "2026-10-11").unwrap();
+        assert_eq!(october_11.weigh_tenth_kg, Some(795));
+        assert_eq!(october_11.trend_tenth_kg, None);
+        assert!(curve.days.iter().any(|d| d.weigh_tenth_kg.is_none()));
+        for view in &curve.days {
+            let date = day(&view.date);
+            let expected = trend(&ws, date)
+                .unwrap()
+                .map(|h| display_tenth_kg(i32::try_from(h).unwrap()));
+            assert_eq!(view.trend_tenth_kg, expected, "{}", view.date);
+            let weigh = ws
+                .iter()
+                .find(|w| w.date() == date)
+                .map(|w| w.weight_tenth_kg());
+            assert_eq!(view.weigh_tenth_kg, weigh, "{}", view.date);
+        }
+        assert_eq!(curve.days[0].label, "28 sept.");
+        assert_eq!(curve.days[14].label, "12 oct.");
+        assert_eq!(curve.variation_tenth_kg, Some(13));
+        assert_eq!(curve.variation_tenth_kg, variation(&ws, today, 14).unwrap());
+
+        let screen = WeightScreen::new(today, &ws).unwrap();
+        assert_eq!(screen.days.len(), 30);
+        assert_eq!(screen.days.last().unwrap().trend_tenth_kg, Some(803));
+        assert_eq!(screen.trend.as_deref(), Some("80,3"));
+        assert_eq!(screen.short_variation, Some(13));
+        assert_eq!(screen.long_variation, None);
+        assert!(screen.notice.is_none());
+        let earlier = screen.days.iter().find(|d| d.date == "2026-09-25").unwrap();
+        assert_eq!(earlier.weigh_tenth_kg, Some(790));
+    }
+
+    #[test]
+    fn fewer_than_four_fasted_weigh_ins_keep_the_points_and_drop_the_curve() {
+        let today = day("2026-11-03");
+        let ws = vec![
+            weigh("2026-11-01", 780),
+            weigh("2026-11-02", 790),
+            weigh_at("2026-11-03", 800, false),
+        ];
+        let curve = WeightCurve::build(today, &ws, 15).unwrap();
+        assert!(curve.days.iter().all(|d| d.trend_tenth_kg.is_none()));
+        let points: Vec<_> = curve
+            .days
+            .iter()
+            .filter(|d| d.weigh_tenth_kg.is_some())
+            .collect();
+        assert_eq!(points.len(), 3);
+        assert_eq!(points[2].date, "2026-11-03");
+        assert_eq!(points[2].weigh_tenth_kg, Some(800));
+        assert_eq!(curve.variation_tenth_kg, None);
+    }
+
+    #[test]
+    fn one_weigh_in_uses_the_exact_note_and_none_invites() {
+        let today = day("2026-11-03");
+        let one = WeightScreen::new(today, &[weigh("2026-11-03", 784)]).unwrap();
+        let CurveNotice::Single {
+            title,
+            note,
+            weight,
+            today: morning,
+        } = one.notice.unwrap()
+        else {
+            panic!("expected the single-weigh-in notice");
+        };
+        assert_eq!(
+            format!("{title} {note}"),
+            "Une pesée pour l'instant. La tendance se trace dès 4 pesées à jeun sur 7 jours. La prochaine, demain matin."
+        );
+        assert_eq!(weight, "78,4");
+        assert!(morning);
+        assert_eq!(one.days.len(), 30);
+        assert!(one.trend.is_none());
+        assert_eq!(
+            one.days
+                .iter()
+                .filter(|d| d.weigh_tenth_kg.is_some())
+                .count(),
+            1
+        );
+
+        let none = WeightScreen::new(today, &[]).unwrap();
+        let CurveNotice::Empty {
+            headline,
+            chart_title,
+            chart_note,
+            ..
+        } = none.notice.unwrap()
+        else {
+            panic!("expected the empty notice");
+        };
+        assert_eq!(headline, "Pas encore de courbe.");
+        assert_eq!(chart_title, "Ta courbe se dessinera ici.");
+        assert!(!chart_note.is_empty());
+        assert!(none.days.iter().all(|d| d.weigh_tenth_kg.is_none()));
+        assert!(none.trend.is_none());
     }
 
     #[test]

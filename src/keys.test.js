@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { savesOnEnter } from "./keys.js";
+import { savesOnEnter, screenShortcut } from "./keys.js";
 
 const enter = {
   key: "Enter",
@@ -30,4 +30,35 @@ test("cmd enter with shift or alt does not save", () => {
 
 test("tab does not save", () => {
   assert.equal(savesOnEnter({ ...enter, key: "Tab", metaKey: true }), false);
+});
+
+const chord = {
+  key: "1",
+  metaKey: false,
+  ctrlKey: false,
+  altKey: false,
+  shiftKey: false,
+  repeat: false,
+};
+
+test("cmd 1 and cmd 2 switch screens on mac", () => {
+  assert.equal(screenShortcut({ ...chord, metaKey: true }, true), "today");
+  assert.equal(screenShortcut({ ...chord, metaKey: true, key: "2" }, true), "weight");
+  assert.equal(screenShortcut({ ...chord, metaKey: true, key: "3" }, true), null);
+});
+
+test("ctrl 1 and ctrl 2 switch screens off mac", () => {
+  assert.equal(screenShortcut({ ...chord, ctrlKey: true }, false), "today");
+  assert.equal(screenShortcut({ ...chord, ctrlKey: true, key: "2" }, false), "weight");
+});
+
+test("the other modifier does not switch screens", () => {
+  assert.equal(screenShortcut({ ...chord, ctrlKey: true }, true), null);
+  assert.equal(screenShortcut({ ...chord, metaKey: true, key: "2" }, false), null);
+});
+
+test("shift, alt or a repeated key does not switch screens", () => {
+  assert.equal(screenShortcut({ ...chord, metaKey: true, shiftKey: true }, true), null);
+  assert.equal(screenShortcut({ ...chord, metaKey: true, altKey: true }, true), null);
+  assert.equal(screenShortcut({ ...chord, metaKey: true, repeat: true }, true), null);
 });
