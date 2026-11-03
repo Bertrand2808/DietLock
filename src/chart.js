@@ -68,7 +68,7 @@ function trendRuns(days) {
     }
   });
   if (current.length) runs.push(current);
-  return runs.filter((run) => run.length > 1);
+  return runs;
 }
 
 /**
@@ -141,7 +141,17 @@ export function renderChart(host, days, notice, span) {
   });
 
   const runs = bare ? [] : trendRuns(days);
+  const markTrend = (index) => {
+    const cx = xAt(index).toFixed(1);
+    const cy = yAt(kg(days[index].trendTenthKg)).toFixed(1);
+    root.append(svg("circle", { class: "wc-halo", cx, cy, r: 7 }));
+    root.append(svg("circle", { class: "wc-end", cx, cy, r: 3.6 }));
+  };
   for (const run of runs) {
+    if (run.length < 2) {
+      markTrend(run[0]);
+      continue;
+    }
     const pts = run.map((index) => [xAt(index), yAt(kg(days[index].trendTenthKg))]);
     const line = smooth(pts);
     const last = pts[pts.length - 1];
@@ -169,13 +179,7 @@ export function renderChart(host, days, notice, span) {
   }
 
   const lastRun = runs[runs.length - 1];
-  if (lastRun) {
-    const index = lastRun[lastRun.length - 1];
-    const cx = xAt(index).toFixed(1);
-    const cy = yAt(kg(days[index].trendTenthKg)).toFixed(1);
-    root.append(svg("circle", { class: "wc-halo", cx, cy, r: 7 }));
-    root.append(svg("circle", { class: "wc-end", cx, cy, r: 3.6 }));
-  }
+  if (lastRun && lastRun.length > 1) markTrend(lastRun[lastRun.length - 1]);
 
   if (notice?.kind === "single") {
     const index = days.findIndex((day) => day.weighTenthKg != null);
