@@ -76,7 +76,6 @@ input {
   display: flex;
   align-items: center;
   justify-content: center;
-  -webkit-app-region: drag;
   user-select: none;
 }
 
@@ -85,7 +84,6 @@ input {
   padding: 2px;
   background: var(--seg-track);
   border-radius: 8px;
-  -webkit-app-region: no-drag;
 }
 
 .seg button {
