@@ -434,7 +434,7 @@ impl Listing {
         let (primary, is_trend, subtitle) = if let Some(weight) = trend.clone() {
             let subtitle = match phrase {
                 Some(kcal) => format!("{kcal} · moyenne à jeun sur 7 jours"),
-                None => "Pas encore de saisie · moyenne à jeun sur 7 jours".to_owned(),
+                None => "Moyenne à jeun sur 7 jours".to_owned(),
             };
             (weight, true, subtitle)
         } else if !has_data {
@@ -824,10 +824,7 @@ mod tests {
             "Aujourd'hui · 400 kcal · moyenne à jeun sur 7 jours"
         );
         let none = home("2026-10-26", 15, &[], &[], Some(7850));
-        assert_eq!(
-            none.subtitle,
-            "Pas encore de saisie · moyenne à jeun sur 7 jours"
-        );
+        assert_eq!(none.subtitle, "Moyenne à jeun sur 7 jours");
     }
 
     #[test]
