@@ -1,0 +1,956 @@
+#!/usr/bin/env python3
+"""Launch DietLock under Xvfb and capture a screen proof.
+
+Instance state (processes, disposable data dir) lives under
+/tmp/dietlock-verify/<run-id>/ and is removed by `cleanup`.
+Proof files live under /tmp/dietlock-verify-evidence/<run-id>/ and are
+never removed by `cleanup`.
+"""
+
+from __future__ import annotations
+
+import base64
+import datetime as dt
+import json
+import os
+import signal
+import socket
+import sqlite3
+import struct
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[4]
+BINARY = REPO / "target" / "debug" / "dietlock"
+APP_ID = "com.bertrand2808.dietlock"
+SCHEMA_VERSION = 2
+WINDOW = (1080, 700)
+INSTANCE_ROOT = Path("/tmp/dietlock-verify")
+EVIDENCE_ROOT = Path("/tmp/dietlock-verify-evidence")
+CURRENT = INSTANCE_ROOT / "current"
+TOOLS = ("cargo", "Xvfb", "dbus-launch", "xwininfo", "xwd", "convert", "tesseract")
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2 or argv[1] in {"-h", "--help"}:
+        print(__doc__)
+        print(
+            "usage: dietlock-verify "
+            "launch | doctor | eval EXPR | text | db | screenshot [PATH] | "
+            "check-today | cargo-test [-- CARGO_ARGS...] | frontend-test | cleanup"
+        )
+        return 0 if len(argv) > 1 else 2
+    cmd, args = argv[1], argv[2:]
+    commands = {
+        "launch": cmd_launch,
+        "doctor": cmd_doctor,
+        "eval": cmd_eval,
+        "text": cmd_text,
+        "db": cmd_db,
+        "screenshot": cmd_screenshot,
+        "check-today": cmd_check_today,
+        "cargo-test": cmd_cargo_test,
+        "frontend-test": cmd_frontend_test,
+        "cleanup": cmd_cleanup,
+    }
+    if cmd not in commands:
+        print(f"unknown command {cmd}", file=sys.stderr)
+        return 2
+    try:
+        return commands[cmd](args)
+    except VerifyError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+
+class VerifyError(Exception):
+    pass
+
+
+def require_tools() -> None:
+    missing = [name for name in TOOLS if shutil_which(name) is None]
+    if missing:
+        raise VerifyError("missing tools: " + ", ".join(missing))
+
+
+def shutil_which(name: str) -> str | None:
+    for directory in os.environ.get("PATH", "").split(":"):
+        candidate = Path(directory) / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def run_id_from_env() -> str | None:
+    run_id = os.environ.get("DIETLOCK_VERIFY_RUN", "").strip()
+    if run_id:
+        return run_id
+    if CURRENT.is_file():
+        text = CURRENT.read_text().strip()
+        return text or None
+    return None
+
+
+def require_state() -> dict:
+    run_id = run_id_from_env()
+    if not run_id:
+        raise VerifyError("no verification instance; run launch first")
+    path = INSTANCE_ROOT / run_id / "state.json"
+    if not path.is_file():
+        raise VerifyError(f"no state for run {run_id}; run launch first")
+    return json.loads(path.read_text())
+
+
+def evidence_dir(state: dict | None = None) -> Path:
+    if state is None:
+        run_id = run_id_from_env()
+        if not run_id:
+            stamp = dt.datetime.now().strftime("%Y%m%dT%H%M%S")
+            run_id = f"cli-{stamp}-{os.getpid()}"
+        directory = EVIDENCE_ROOT / run_id
+    else:
+        directory = Path(state["evidence_dir"])
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def cmdline(pid: int) -> str:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return ""
+    return raw.replace(b"\0", b" ").decode(errors="replace")
+
+
+def children_of(pid: int) -> list[int]:
+    found = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat = (entry / "stat").read_text()
+        except OSError:
+            continue
+        marker = stat.rfind(")")
+        if marker < 0:
+            continue
+        parts = stat[marker + 2 :].split()
+        if len(parts) > 1 and parts[1] == str(pid):
+            found.append(int(entry.name))
+    return found
+
+
+def kill_tree(pid: int) -> None:
+    if not pid_alive(pid):
+        return
+    for child in children_of(pid):
+        kill_tree(child)
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+    for _ in range(20):
+        if not pid_alive(pid):
+            return
+        time.sleep(0.1)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
+def pids_mentioning(fragment: str) -> list[int]:
+    found = []
+    me = os.getpid()
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == me:
+            continue
+        if fragment and fragment in cmdline(pid):
+            found.append(pid)
+    return found
+
+
+def free_display() -> str:
+    for number in range(90, 120):
+        if not Path(f"/tmp/.X11-unix/X{number}").exists():
+            return f":{number}"
+    raise VerifyError("no free X display between :90 and :119")
+
+
+def free_port_pair() -> tuple[int, int]:
+    """Two loopback ports WebKit can bind after this process releases them."""
+    for port in range(41000, 41098):
+        holders = []
+        try:
+            for candidate in (port, port + 1):
+                sock = socket.socket()
+                sock.bind(("127.0.0.1", candidate))
+                holders.append(sock)
+        except OSError:
+            for sock in holders:
+                sock.close()
+            continue
+        for sock in holders:
+            sock.close()
+        return port, port + 1
+    raise VerifyError("no free inspector port pair between 41000 and 41099")
+
+
+def display_env(state: dict) -> dict[str, str]:
+    env = os.environ.copy()
+    env["DISPLAY"] = state["display"]
+    return env
+
+
+def cmd_launch(_args: list[str]) -> int:
+    require_tools()
+    existing = run_id_from_env()
+    if existing:
+        state_path = INSTANCE_ROOT / existing / "state.json"
+        if state_path.is_file():
+            state = json.loads(state_path.read_text())
+            if pid_alive(int(state.get("app_pid", 0))):
+                raise VerifyError(
+                    f"run {existing} is already up (pid {state['app_pid']}); "
+                    "cleanup before launching another instance"
+                )
+    print("building debug binary (developer extras are on in this profile)", flush=True)
+    built = subprocess.run(["cargo", "build", "-p", "dietlock"], cwd=REPO)
+    if built.returncode != 0:
+        return built.returncode
+    if not BINARY.is_file():
+        raise VerifyError(f"binary missing after build: {BINARY}")
+
+    run_id = dt.datetime.now().strftime("%Y%m%dT%H%M%S") + f"-{os.getpid()}"
+    instance = INSTANCE_ROOT / run_id
+    home = instance / "home"
+    data = instance / "data"
+    config = instance / "config"
+    cache = instance / "cache"
+    runtime = instance / "runtime"
+    for directory in (home, data, config, cache, runtime):
+        directory.mkdir(parents=True)
+    evidence = EVIDENCE_ROOT / run_id
+    evidence.mkdir(parents=True)
+    display = free_display()
+    port, inspector_server_port = free_port_pair()
+
+    xvfb_log = open(instance / "xvfb.log", "w")
+    xvfb = subprocess.Popen(
+        [
+            "Xvfb",
+            display,
+            "-screen",
+            "0",
+            "1280x800x24",
+            "-ac",
+            "+extension",
+            "GLX",
+            "+render",
+            "-noreset",
+        ],
+        stdout=xvfb_log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    dbus_pid = 0
+    app = None
+    try:
+        deadline = time.time() + 5
+        while not Path(f"/tmp/.X11-unix/X{display[1:]}").exists():
+            if time.time() > deadline:
+                raise VerifyError("Xvfb did not create a display socket")
+            if xvfb.poll() is not None:
+                raise VerifyError(f"Xvfb exited {xvfb.returncode}; see {instance / 'xvfb.log'}")
+            time.sleep(0.05)
+        dbus = subprocess.run(
+            ["dbus-launch", "--sh-syntax"],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "DISPLAY": display},
+        )
+        dbus_env: dict[str, str] = {}
+        for line in dbus.stdout.splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            dbus_env[key] = value.strip().rstrip(";").strip("'\"")
+        dbus_pid = int(dbus_env.get("DBUS_SESSION_BUS_PID", "0") or "0")
+        app_env = os.environ.copy()
+        app_env.update(
+            {
+                "DISPLAY": display,
+                "HOME": str(home),
+                "XDG_DATA_HOME": str(data),
+                "XDG_CONFIG_HOME": str(config),
+                "XDG_CACHE_HOME": str(cache),
+                "XDG_RUNTIME_DIR": str(runtime),
+                "DBUS_SESSION_BUS_ADDRESS": dbus_env["DBUS_SESSION_BUS_ADDRESS"],
+                "GDK_BACKEND": "x11",
+                "LIBGL_ALWAYS_SOFTWARE": "1",
+                "WEBKIT_DISABLE_COMPOSITING_MODE": "1",
+                "WEBKIT_DISABLE_DMABUF_RENDERER": "1",
+                "WEBKIT_INSPECTOR_HTTP_SERVER": f"127.0.0.1:{port}",
+                "WEBKIT_INSPECTOR_SERVER": f"127.0.0.1:{inspector_server_port}",
+            }
+        )
+        app_log = open(instance / "app.log", "w")
+        app = subprocess.Popen(
+            [str(BINARY)],
+            cwd=REPO,
+            env=app_env,
+            stdout=app_log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        state = {
+            "run_id": run_id,
+            "repo": str(REPO),
+            "display": display,
+            "inspector_port": port,
+            "inspector_url": f"http://127.0.0.1:{port}/",
+            "xvfb_pid": xvfb.pid,
+            "dbus_pid": dbus_pid,
+            "app_pid": app.pid,
+            "instance_dir": str(instance),
+            "data_home": str(data),
+            "db": str(data / APP_ID / "dietlock.sqlite"),
+            "binary": str(BINARY),
+            "evidence_dir": str(evidence),
+        }
+        (instance / "state.json").write_text(json.dumps(state, indent=2) + "\n")
+        INSTANCE_ROOT.mkdir(parents=True, exist_ok=True)
+        CURRENT.write_text(run_id + "\n")
+        wait_until_ready(state)
+    except Exception:
+        if app is not None:
+            kill_tree(app.pid)
+        kill_tree(xvfb.pid)
+        if dbus_pid:
+            kill_tree(dbus_pid)
+        if CURRENT.is_file() and CURRENT.read_text().strip() == run_id:
+            CURRENT.unlink()
+        raise
+    print(f"run {run_id}")
+    print(f"binary {BINARY}")
+    print(f"display {display}")
+    print(f"inspector {state['inspector_url']}")
+    print(f"data {state['db']}")
+    print(f"evidence {evidence}")
+    print("ready")
+    return 0
+
+
+def wait_until_ready(state: dict) -> None:
+    deadline = time.time() + 20
+    last = "inspector not up"
+    while time.time() < deadline:
+        if not pid_alive(int(state["app_pid"])):
+            log = Path(state["instance_dir"]) / "app.log"
+            detail = log.read_text()[-2000:] if log.is_file() else ""
+            raise VerifyError(f"DietLock exited before it was usable\n{detail}")
+        try:
+            headline = evaluate(state, 'document.getElementById("headline").textContent')
+        except VerifyError as exc:
+            last = str(exc)
+            time.sleep(0.25)
+            continue
+        if isinstance(headline, str) and headline.strip():
+            print(f"ready headline: {headline.strip()}")
+            return
+        last = f"headline still empty ({headline!r})"
+        time.sleep(0.25)
+    raise VerifyError(f"DietLock did not become usable within 20s: {last}")
+
+
+def cmd_doctor(_args: list[str]) -> int:
+    state = require_state()
+    problems = doctor_problems(state)
+    if problems:
+        print("doctor FAIL")
+        for problem in problems:
+            print(f"- {problem}")
+        return 1
+    print("doctor PASS")
+    print(f"run {state['run_id']}")
+    print(f"pid {state['app_pid']} {cmdline(int(state['app_pid'])).strip()}")
+    print(f"display {state['display']}")
+    print(f"inspector {state['inspector_url']}")
+    print(f"database {state['db']} schema {schema_version(state)}")
+    width, height = window_geometry(state)[:2]
+    print(f"window DietLock {width}x{height}")
+    return 0
+
+
+def doctor_problems(state: dict) -> list[str]:
+    problems = []
+    app_pid = int(state["app_pid"])
+    if not pid_alive(app_pid):
+        problems.append(f"app pid {app_pid} is not running")
+    elif "dietlock" not in Path(cmdline(app_pid).split(" ")[0]).name:
+        problems.append(f"pid {app_pid} is not the dietlock binary ({cmdline(app_pid)!r})")
+    if not pid_alive(int(state["xvfb_pid"])):
+        problems.append(f"Xvfb pid {state['xvfb_pid']} is not running")
+    if not str(state["db"]).startswith(str(state["data_home"])):
+        problems.append("database path is outside this run's data dir")
+    if not Path(state["db"]).is_file():
+        problems.append(f"database missing: {state['db']}")
+    else:
+        version = schema_version(state)
+        if version != SCHEMA_VERSION:
+            problems.append(f"schema user_version is {version}, expected {SCHEMA_VERSION}")
+    try:
+        page = urllib.request.urlopen(state["inspector_url"], timeout=2).read().decode()
+    except OSError as exc:
+        problems.append(f"inspector not answering: {exc}")
+    else:
+        if "DietLock" not in page or "tauri://localhost" not in page:
+            problems.append("inspector page has no DietLock target at tauri://localhost")
+    try:
+        window_geometry(state)
+    except VerifyError as exc:
+        problems.append(str(exc))
+    return problems
+
+
+def schema_version(state: dict) -> int | None:
+    try:
+        con = sqlite3.connect(f"file:{state['db']}?mode=ro", uri=True, timeout=2)
+    except sqlite3.Error:
+        return None
+    try:
+        row = con.execute("PRAGMA user_version").fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        con.close()
+    return None if row is None else int(row[0])
+
+
+def db_rows(state: dict) -> tuple[list[tuple], list[tuple]]:
+    con = sqlite3.connect(f"file:{state['db']}?mode=ro", uri=True, timeout=2)
+    try:
+        weigh = con.execute(
+            "SELECT date, weight_tenth_kg, fasted FROM weigh_in ORDER BY date"
+        ).fetchall()
+        intake = con.execute(
+            "SELECT date, protein_tenth_g, carbs_tenth_g, fat_tenth_g, water_ml FROM intake ORDER BY date"
+        ).fetchall()
+    finally:
+        con.close()
+    return weigh, intake
+
+
+def cmd_db(_args: list[str]) -> int:
+    state = require_state()
+    weigh, intake = db_rows(state)
+    print(f"weigh_in {len(weigh)}")
+    for row in weigh:
+        print("weigh_in " + " ".join(str(part) for part in row))
+    print(f"intake {len(intake)}")
+    for row in intake:
+        print("intake " + " ".join(str(part) for part in row))
+    return 0
+
+
+def window_geometry(state: dict) -> tuple[int, int, str]:
+    proc = subprocess.run(
+        ["xwininfo", "-name", "DietLock"],
+        env=display_env(state),
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise VerifyError(proc.stderr.strip() or "no window named DietLock")
+    window_id = ""
+    width = height = 0
+    for line in proc.stdout.splitlines():
+        if "Window id:" in line:
+            window_id = line.split()[3]
+        elif line.strip().startswith("Width:"):
+            width = int(line.split()[1])
+        elif line.strip().startswith("Height:"):
+            height = int(line.split()[1])
+    if not window_id or width <= 0 or height <= 0:
+        raise VerifyError("xwininfo did not report a DietLock window id and size")
+    return width, height, window_id
+
+
+def capture_window(state: dict, path: Path) -> tuple[int, int]:
+    last = "window not captured"
+    for _ in range(10):
+        try:
+            width, height, window_id = window_geometry(state)
+            xwd = subprocess.run(
+                ["xwd", "-id", window_id, "-silent"],
+                env=display_env(state),
+                capture_output=True,
+                check=True,
+            )
+            path.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["convert", "xwd:-", str(path)],
+                input=xwd.stdout,
+                capture_output=True,
+                check=True,
+            )
+            return width, height
+        except (VerifyError, subprocess.CalledProcessError) as exc:
+            last = str(exc)
+            time.sleep(0.2)
+    raise VerifyError(last)
+
+
+def png_size(path: Path) -> tuple[int, int]:
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        raise VerifyError(f"{path} is not a PNG")
+    return struct.unpack(">II", data[16:24])
+
+
+def cmd_screenshot(args: list[str]) -> int:
+    state = require_state()
+    if args:
+        path = Path(args[0])
+    else:
+        path = evidence_dir(state) / "screen.png"
+    width, height = capture_window(state, path)
+    print(f"screenshot {path} {width}x{height}")
+    return 0
+
+
+def cmd_text(_args: list[str]) -> int:
+    state = require_state()
+    value = evaluate(state, "document.body.innerText")
+    print(value if isinstance(value, str) else json.dumps(value, ensure_ascii=False))
+    return 0
+
+
+def cmd_eval(args: list[str]) -> int:
+    if not args:
+        raise VerifyError("eval needs one JavaScript expression")
+    state = require_state()
+    value = evaluate(state, " ".join(args))
+    if isinstance(value, str):
+        print(value)
+    else:
+        print(json.dumps(value, ensure_ascii=False))
+    return 0
+
+
+def inspector_socket_path(state: dict) -> str:
+    try:
+        page = urllib.request.urlopen(state["inspector_url"], timeout=2).read().decode()
+    except OSError as exc:
+        raise VerifyError(f"inspector not answering: {exc}") from exc
+    marker = "/socket/"
+    start = page.find(marker)
+    if start < 0:
+        raise VerifyError("inspector page has no /socket/ path")
+    end = start
+    while end < len(page) and page[end] not in "\"' <":
+        end += 1
+    return page[start:end]
+
+
+def evaluate(state: dict, expression: str):
+    path = inspector_socket_path(state)
+    host_port = state["inspector_url"].removeprefix("http://").rstrip("/")
+    host, port_text = host_port.rsplit(":", 1)
+    try:
+        inspector = Inspector(host, int(port_text), path)
+    except OSError as exc:
+        raise VerifyError(f"inspector not answering: {exc}") from exc
+    try:
+        return inspector.evaluate(expression)
+    finally:
+        inspector.close()
+
+
+class Inspector:
+    def __init__(self, host: str, port: int, path: str):
+        key = base64.b64encode(os.urandom(16)).decode()
+        self.sock = socket.create_connection((host, port), timeout=5)
+        self.sock.sendall(
+            (
+                f"GET {path} HTTP/1.1\r\n"
+                f"Host: {host}:{port}\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                f"Sec-WebSocket-Key: {key}\r\n"
+                "Sec-WebSocket-Version: 13\r\n"
+                "\r\n"
+            ).encode()
+        )
+        handshake = self._read_headers()
+        if b" 101 " not in handshake.split(b"\r\n", 1)[0]:
+            raise VerifyError(f"inspector handshake failed: {handshake[:200]!r}")
+        self.sock.settimeout(5)
+        self.next_id = 0
+        self.target_id = None
+        deadline = time.time() + 5
+        while self.target_id is None and time.time() < deadline:
+            message = self._recv_json()
+            if not message:
+                continue
+            if (
+                message.get("method") == "Target.targetCreated"
+                and message.get("params", {}).get("targetInfo", {}).get("type") == "page"
+            ):
+                self.target_id = message["params"]["targetInfo"]["targetId"]
+        if not self.target_id:
+            raise VerifyError("inspector exposed no page target")
+
+    def close(self) -> None:
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+    def evaluate(self, expression: str):
+        inner_id = self._send_to_target(
+            {
+                "method": "Runtime.evaluate",
+                "params": {"expression": expression, "returnByValue": True},
+            }
+        )
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            message = self._recv_json()
+            if not message or message.get("method") != "Target.dispatchMessageFromTarget":
+                continue
+            inner = json.loads(message["params"]["message"])
+            if inner.get("id") != inner_id:
+                continue
+            if "error" in inner:
+                raise VerifyError("inspector error: " + json.dumps(inner["error"]))
+            result = inner.get("result", {})
+            if result.get("wasThrown") or result.get("exceptionDetails"):
+                raise VerifyError("JS exception: " + json.dumps(result))
+            remote = result.get("result", {})
+            if "value" in remote:
+                return remote["value"]
+            if remote.get("type") == "undefined":
+                return None
+            raise VerifyError("inspector returned no value: " + json.dumps(remote))
+        raise VerifyError("inspector did not answer the evaluation")
+
+    def _send_to_target(self, inner: dict) -> int:
+        self.next_id += 1
+        inner_id = self.next_id
+        inner = {"id": inner_id, **inner}
+        self.next_id += 1
+        self._send(
+            {
+                "id": self.next_id,
+                "method": "Target.sendMessageToTarget",
+                "params": {"targetId": self.target_id, "message": json.dumps(inner)},
+            }
+        )
+        return inner_id
+
+    def _read_headers(self) -> bytes:
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        return data
+
+    def _send(self, payload: dict) -> None:
+        raw = json.dumps(payload).encode()
+        mask = os.urandom(4)
+        header = bytearray([0x81])
+        length = len(raw)
+        if length < 126:
+            header.append(0x80 | length)
+        elif length < 65536:
+            header.append(0x80 | 126)
+            header.extend(struct.pack(">H", length))
+        else:
+            header.append(0x80 | 127)
+            header.extend(struct.pack(">Q", length))
+        header.extend(mask)
+        masked = bytes(byte ^ mask[index % 4] for index, byte in enumerate(raw))
+        self.sock.sendall(bytes(header) + masked)
+
+    def _recv_exact(self, size: int) -> bytes:
+        buf = b""
+        while len(buf) < size:
+            chunk = self.sock.recv(size - len(buf))
+            if not chunk:
+                raise VerifyError("inspector socket closed")
+            buf += chunk
+        return buf
+
+    def _recv_json(self) -> dict | None:
+        while True:
+            first, second = self._recv_exact(2)
+            opcode = first & 0x0F
+            length = second & 0x7F
+            if length == 126:
+                length = struct.unpack(">H", self._recv_exact(2))[0]
+            elif length == 127:
+                length = struct.unpack(">Q", self._recv_exact(8))[0]
+            mask = self._recv_exact(4) if second & 0x80 else None
+            payload = self._recv_exact(length)
+            if mask:
+                payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
+            if opcode == 8:
+                raise VerifyError("inspector closed the socket")
+            if opcode == 9:
+                pong = bytearray([0x8A])
+                pong.append(0x80 | min(len(payload), 125))
+                mask_key = os.urandom(4)
+                pong.extend(mask_key)
+                self.sock.sendall(bytes(pong))
+                continue
+            if opcode in (1, 2):
+                return json.loads(payload.decode())
+            if opcode == 0:
+                continue
+
+
+def local_today() -> str:
+    return dt.date.today().isoformat()
+
+
+def expected_greeting() -> str:
+    """Same cut as `view::greeting`: Bonjour from 05:00 until 18:00."""
+    hour = dt.datetime.now().hour
+    return "Bonjour." if 5 <= hour < 18 else "Bonsoir."
+
+
+def expected_intake_date(_today: str) -> str:
+    """Empty store: the intake chip stays on yesterday, including after noon."""
+    return (dt.date.today() - dt.timedelta(days=1)).isoformat()
+
+
+def ocr(path: Path) -> str:
+    proc = subprocess.run(
+        ["tesseract", str(path), "stdout", "-l", "fra", "--psm", "6"],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        raise VerifyError(proc.stderr.strip() or "tesseract failed")
+    return proc.stdout
+
+
+TODAY_SNAPSHOT = """JSON.stringify({
+  title: document.title,
+  headline: document.getElementById("headline").textContent,
+  subtitle: document.getElementById("subhead").textContent,
+  todayTab: document.getElementById("tab-today").getAttribute("aria-selected"),
+  weightTab: document.getElementById("tab-weight").textContent.trim(),
+  todayHidden: document.getElementById("screen-today").hidden,
+  weightHidden: document.getElementById("screen-weight").hidden,
+  weighDate: document.getElementById("weigh-chip").dataset.date,
+  weighChip: document.getElementById("weigh-chip").innerText,
+  intakeDate: document.getElementById("intake-chip").dataset.date,
+  intakeChip: document.getElementById("intake-chip").innerText,
+  forgotHidden: document.getElementById("forgot").hidden,
+  fasted: document.getElementById("fasted").checked,
+  weighErrorHidden: document.getElementById("weigh-error").hidden,
+  weighError: document.getElementById("weigh-error").textContent,
+  intakeErrorHidden: document.getElementById("intake-error").hidden,
+  savedHidden: document.getElementById("saved").hidden,
+  confirmHidden: document.getElementById("confirm").hidden,
+  history: document.getElementById("hist").innerText,
+  historyRows: document.querySelectorAll("#hist .day").length
+})"""
+
+WEIGHT_SNAPSHOT = """JSON.stringify({
+  headline: document.getElementById("w-headline").textContent,
+  subtitle: document.getElementById("w-sub").textContent,
+  range: document.getElementById("w-range").textContent,
+  count: document.getElementById("w-count").textContent,
+  chart: document.getElementById("chartbox").innerText,
+  todayHidden: document.getElementById("screen-today").hidden,
+  weightHidden: document.getElementById("screen-weight").hidden,
+  weightTab: document.getElementById("tab-weight").getAttribute("aria-selected")
+})"""
+
+
+def read_json_screen(state: dict, expression: str) -> dict:
+    snapshot = evaluate(state, expression)
+    if not isinstance(snapshot, str):
+        raise VerifyError(f"screen snapshot was not text: {snapshot!r}")
+    return json.loads(snapshot)
+
+
+def cmd_check_today(_args: list[str]) -> int:
+    state = require_state()
+    problems = doctor_problems(state)
+    directory = evidence_dir(state)
+    evaluate(state, 'document.getElementById("tab-today").click(); "today"')
+    deadline = time.time() + 8
+    screen: dict = {}
+    while time.time() < deadline:
+        screen = read_json_screen(state, TODAY_SNAPSHOT)
+        if screen.get("headline") and screen.get("todayHidden") is False:
+            break
+        time.sleep(0.25)
+    shot = directory / "today.png"
+    width, height = capture_window(state, shot)
+    png_width, png_height = png_size(shot)
+    (directory / "today.dom.json").write_text(
+        json.dumps(screen, ensure_ascii=False, indent=2) + "\n"
+    )
+    text = evaluate(state, "document.body.innerText")
+    (directory / "today.dom.txt").write_text(str(text) + "\n")
+    recognized = ocr(shot)
+    (directory / "today.ocr.txt").write_text(recognized)
+    evaluate(state, 'document.getElementById("tab-weight").click(); "opened"')
+    weight: dict = {}
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        weight = read_json_screen(state, WEIGHT_SNAPSHOT)
+        if weight.get("headline"):
+            break
+        time.sleep(0.25)
+    (directory / "weight.dom.json").write_text(
+        json.dumps(weight, ensure_ascii=False, indent=2) + "\n"
+    )
+    weigh, intake_rows = db_rows(state)
+    version = schema_version(state)
+    today = local_today()
+    greeting = expected_greeting()
+    intake_date = expected_intake_date(today)
+    forgot_hidden = dt.datetime.now().hour < 4
+    empty_subtitle = "Pas encore de saisie. La tendance apparaîtra après 4 pesées à jeun."
+    ocr_flat = " ".join(recognized.split())
+    history = screen.get("history") or ""
+    checks = [
+        ("doctor", not problems, "; ".join(problems)),
+        ("title", screen.get("title") == "DietLock", repr(screen.get("title"))),
+        ("greeting", screen.get("headline") == greeting, repr(screen.get("headline"))),
+        ("empty subtitle", screen.get("subtitle") == empty_subtitle, repr(screen.get("subtitle"))),
+        ("today tab selected", screen.get("todayTab") == "true", repr(screen.get("todayTab"))),
+        ("weight tab label", screen.get("weightTab") == "Poids", repr(screen.get("weightTab"))),
+        ("today screen visible", screen.get("todayHidden") is False, repr(screen.get("todayHidden"))),
+        ("weight screen hidden", screen.get("weightHidden") is True, repr(screen.get("weightHidden"))),
+        ("weigh-in chip is today", screen.get("weighDate") == today and "Aujourd'hui" in (screen.get("weighChip") or ""), repr(screen.get("weighChip"))),
+        ("intake chip date", screen.get("intakeDate") == intake_date, repr(screen.get("intakeDate"))),
+        ("forgotten mark", screen.get("forgotHidden") is forgot_hidden, repr(screen.get("forgotHidden"))),
+        ("fasted checked", screen.get("fasted") is True, repr(screen.get("fasted"))),
+        ("no weigh error", screen.get("weighErrorHidden") is True and screen.get("weighError") == "", repr(screen.get("weighError"))),
+        ("no intake error", screen.get("intakeErrorHidden") is True, repr(screen.get("intakeErrorHidden"))),
+        ("save status hidden", screen.get("savedHidden") is True, repr(screen.get("savedHidden"))),
+        ("confirm hidden", screen.get("confirmHidden") is True, repr(screen.get("confirmHidden"))),
+        ("empty history", "Ta première journée apparaîtra ici." in history and "Commence par ton poids de ce matin" in history and screen.get("historyRows") == 0, repr(history)),
+        ("schema", version == SCHEMA_VERSION, repr(version)),
+        ("no weigh-in rows", len(weigh) == 0, repr(weigh)),
+        ("no intake rows", len(intake_rows) == 0, repr(intake_rows)),
+        ("png size", (png_width, png_height) == (width, height) == WINDOW, f"{png_width}x{png_height} window {width}x{height}"),
+        ("ocr empty copy", "Pas encore de saisie" in ocr_flat and "Aujourd" in ocr_flat, "missing from OCR"),
+        ("ocr empty history", "première journée" in ocr_flat, "missing from OCR"),
+        ("ocr weight tab", "Poids" in ocr_flat, "missing from OCR"),
+        ("weight screen headline", weight.get("headline") == "Pas encore de courbe.", repr(weight.get("headline"))),
+        ("weight screen subtitle", weight.get("subtitle") == "La tendance apparaîtra après 4 pesées à jeun.", repr(weight.get("subtitle"))),
+        ("weight screen range", weight.get("range") == "15 derniers jours" and weight.get("count") == "aucune pesée", repr((weight.get("range"), weight.get("count")))),
+        ("weight screen chart", "Ta courbe se dessinera ici." in (weight.get("chart") or ""), repr(weight.get("chart"))),
+        ("weight tab selected", weight.get("weightTab") == "true" and weight.get("weightHidden") is False and weight.get("todayHidden") is True, repr(weight.get("weightTab"))),
+    ]
+    failed = [name for name, ok, _detail in checks if not ok]
+    lines = ["check-today PASS" if not failed else "check-today FAIL"]
+    for name, ok, detail in checks:
+        lines.append(f"{'ok' if ok else 'FAIL'} {name}" + ("" if ok else f" ({detail})"))
+    lines.append(f"screenshot {shot} {png_width}x{png_height}")
+    report = "\n".join(lines) + "\n"
+    (directory / "check-today.txt").write_text(report)
+    print(report, end="")
+    return 1 if failed else 0
+
+
+def cmd_frontend_test(_args: list[str]) -> int:
+    directory = evidence_dir(require_state() if run_id_from_env() else None)
+    files = [
+        "src/calendar.test.js",
+        "src/chart.test.js",
+        "src/keys.test.js",
+        "src/save.test.js",
+    ]
+    command = ["node", "--test", *files]
+    proc = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+    body = (
+        f"$ {' '.join(command)}\n"
+        f"exit: {proc.returncode}\n"
+        f"--- stdout ---\n{proc.stdout}"
+        f"--- stderr ---\n{proc.stderr}"
+    )
+    path = directory / "frontend-test.txt"
+    path.write_text(body)
+    sys.stdout.write(body)
+    print(f"evidence {path}")
+    return proc.returncode
+
+
+def cmd_cargo_test(args: list[str]) -> int:
+    if args[:1] == ["--"]:
+        args = args[1:]
+    directory = evidence_dir(require_state() if run_id_from_env() else None)
+    command = ["cargo", "test", *args]
+    proc = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+    body = (
+        f"$ {' '.join(command)}\n"
+        f"exit: {proc.returncode}\n"
+        f"--- stdout ---\n{proc.stdout}"
+        f"--- stderr ---\n{proc.stderr}"
+    )
+    path = directory / "cargo-test.txt"
+    path.write_text(body)
+    sys.stdout.write(body)
+    print(f"evidence {path}")
+    return proc.returncode
+
+
+def cmd_cleanup(_args: list[str]) -> int:
+    run_id = run_id_from_env()
+    if not run_id:
+        print("cleanup: no current run")
+        return 0
+    instance = INSTANCE_ROOT / run_id
+    state_path = instance / "state.json"
+    evidence = EVIDENCE_ROOT / run_id
+    if state_path.is_file():
+        state = json.loads(state_path.read_text())
+        evidence = Path(state["evidence_dir"])
+        kill_tree(int(state.get("app_pid") or 0))
+        for pid in pids_mentioning(state["instance_dir"]):
+            kill_tree(pid)
+        kill_tree(int(state.get("xvfb_pid") or 0))
+        kill_tree(int(state.get("dbus_pid") or 0))
+    if instance.exists():
+        import shutil
+
+        shutil.rmtree(instance, ignore_errors=True)
+    if CURRENT.is_file() and CURRENT.read_text().strip() == run_id:
+        CURRENT.unlink()
+    if not evidence.is_dir():
+        raise VerifyError(f"cleanup removed evidence at {evidence}")
+    print(f"cleanup removed instance {instance}")
+    print(f"evidence kept {evidence}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
