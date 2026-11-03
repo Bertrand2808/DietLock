@@ -851,6 +851,17 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_weigh_in_drops_the_no_entry_subtitle() {
+        let saved = home("2026-10-26", 10, &[weigh("2026-10-26", 826)], &[], None);
+        assert_eq!(saved.primary, "");
+        assert!(!saved.is_trend);
+        assert_eq!(
+            saved.subtitle,
+            "La tendance apparaîtra après 4 pesées à jeun."
+        );
+    }
+
+    #[test]
     fn at_14h_the_screen_dates_the_intake_yesterday_and_shows_the_flag() {
         let today = day("2026-10-26");
         let proposed = proposed_intake_date(
