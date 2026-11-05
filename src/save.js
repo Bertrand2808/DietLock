@@ -12,6 +12,22 @@ export function intakeStarted(fields) {
  * The callbacks resolve to "saved", "error", "confirm" or any other status.
  * They must not reject: a thrown error would skip the remaining block.
  */
+export function blockStatus(status) {
+  if (status === "alreadyFilled") return "confirm";
+  if (status === "saved") return "saved";
+  return status;
+}
+
+export function intakeConfirmText(entry) {
+  const oldWater = entry.old.water ? `, eau ${entry.old.water} L` : "";
+  const nextWater = entry.waterText.trim() ? `, eau ${entry.waterText.trim()} L` : "";
+  return (
+    `Le ${entry.label} a déjà une alimentation : ${entry.old.energy} kcal ` +
+    `(P ${entry.old.proteinG} g, G ${entry.old.carbsG} g, L ${entry.old.fatG} g${oldWater}). ` +
+    `La remplacer par P ${entry.proteinText} g, G ${entry.carbsText} g, L ${entry.fatText} g${nextWater} ?`
+  );
+}
+
 export async function saveBlocks(fields, saveWeighIn, saveIntake) {
   const outcome = { weighIn: "skipped", intake: "skipped" };
   if (weighInStarted(fields)) outcome.weighIn = await saveWeighIn();
