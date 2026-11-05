@@ -99,6 +99,8 @@ impl From<&Intake> for IntakeView {
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum IntakeSaveOutcome {
     Saved,
+    /// The typed intake matches the stored one. Nothing was written.
+    Unchanged,
     /// The date already holds `old`; nothing was written.
     AlreadyFilled {
         old: IntakeView,
@@ -127,6 +129,8 @@ pub struct DayView {
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum SaveOutcome {
     Saved,
+    /// The typed weigh-in matches the stored one. Nothing was written.
+    Unchanged,
     /// The date already holds `old`; nothing was written.
     AlreadyFilled {
         old: WeighInView,

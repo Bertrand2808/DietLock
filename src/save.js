@@ -13,12 +13,19 @@ export function intakeStarted(fields) {
  * They must not reject: a thrown error would skip the remaining block.
  */
 export function blockStatus(status) {
+  if (status === "unchanged") return "skipped";
   if (status === "alreadyFilled") return "confirm";
   if (status === "saved") return "saved";
   return status;
 }
 
 export function intakeConfirmText(entry) {
+  const macrosBlank = ["proteinText", "carbsText", "fatText"].every(
+    (key) => entry[key].trim() === "",
+  );
+  if (macrosBlank && entry.old.water) {
+    return `Le ${entry.label} a déjà une eau : ${entry.old.water} L. La remplacer par ${entry.waterText.trim()} L ?`;
+  }
   const oldWater = entry.old.water ? `, eau ${entry.old.water} L` : "";
   const nextWater = entry.waterText.trim() ? `, eau ${entry.waterText.trim()} L` : "";
   return (

@@ -33,6 +33,8 @@ Preconditions:
 ## Gotchas
 
 - The first save on an empty date does not ask. It writes immediately.
+- A value equal to the one already stored does not ask and does not write.
+- Water typed alone on a day that already has macros writes the water and keeps the macros. The question appears only when that day already has water.
 - A weigh-in and an intake on the same date do not block each other.
 - `#save` does nothing while the question is open. Use `#confirm-replace` or `#confirm-cancel`.
 - `Annuler` only dismisses the question. It does not clear what you typed.

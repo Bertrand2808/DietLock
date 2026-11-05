@@ -23,7 +23,7 @@ A day receives two independent inputs, and no existing data is replaced without 
 
 - **S1 · Two independent inputs.** The Weigh-in and the Intake are saved separately. Either can exist without the other.
 - **S2 · Uniqueness.** A date holds at most one Weigh-in and one Intake.
-- **S3 · Confirmed replacement.** Entering a Weigh-in or an Intake on a date that already has one requires confirmation. The old value is shown next to the new one.
+- **S3 · Confirmed replacement.** Replacing a Weigh-in, the Macros, or water that was already entered requires confirmation. The old value is shown next to the new one. Submitting the same value writes nothing and asks nothing. Water added to an Intake that has none is written without confirmation and leaves the Macros in place. Macros left blank do not replace stored Macros.
 - **S4 · Complete macros.** Protein, carbohydrate and fat are required together. Water is optional.
 - **S5 · No pre-fill.** No field is pre-filled. The values of the last Intake appear greyed out in empty fields, as a hint only. An empty field is never saved (S4).
 - **S6 · Formats.** Weight in kg with one decimal. Macros in grams with at most one decimal. Water in litres with at most two decimals. Comma and point are both accepted as decimal separator.
