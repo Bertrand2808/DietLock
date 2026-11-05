@@ -16,7 +16,7 @@ fn to_intake((d, p, c, f, w): RawIntake) -> Result<Intake, StoreError> {
 
 pub(crate) fn get_intake(conn: &Connection, date: Day) -> Result<Option<Intake>, StoreError> {
     conn.query_row(
-        "SELECT date, protein_g, carbs_g, fat_g, water_ml FROM intake WHERE date = ?1",
+        "SELECT date, protein_tenth_g, carbs_tenth_g, fat_tenth_g, water_ml FROM intake WHERE date = ?1",
         [date.to_string()],
         raw_intake,
     )
@@ -32,7 +32,7 @@ pub(crate) fn list_intakes(
     to: Day,
 ) -> Result<Vec<Intake>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT date, protein_g, carbs_g, fat_g, water_ml FROM intake
+        "SELECT date, protein_tenth_g, carbs_tenth_g, fat_tenth_g, water_ml FROM intake
          WHERE date BETWEEN ?1 AND ?2 ORDER BY date",
     )?;
     let rows = stmt.query_map(params![from.to_string(), to.to_string()], raw_intake)?;
@@ -50,13 +50,13 @@ pub(crate) fn save_intake(
         return Err(SaveError::AlreadyFilled(old));
     }
     conn.execute(
-        "INSERT OR REPLACE INTO intake (date, protein_g, carbs_g, fat_g, water_ml)
+        "INSERT OR REPLACE INTO intake (date, protein_tenth_g, carbs_tenth_g, fat_tenth_g, water_ml)
          VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
             i.date().to_string(),
-            i.protein_g(),
-            i.carbs_g(),
-            i.fat_g(),
+            i.protein_tenth_g(),
+            i.carbs_tenth_g(),
+            i.fat_tenth_g(),
             i.water_ml()
         ],
     )?;
@@ -72,6 +72,7 @@ pub(crate) fn delete_intake(conn: &Connection, date: Day) -> Result<(), StoreErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Store;
     use crate::tests::{day, intake, store};
 
     #[test]
@@ -86,6 +87,34 @@ mod tests {
         }
         s.save_intake(&second, true).unwrap();
         assert_eq!(s.get_intake(day("2026-10-12")).unwrap(), Some(second));
+    }
+
+    #[test]
+    fn decimal_intake_survives_reopen() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("dietlock-decimal-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("dietlock.sqlite");
+        let i = Intake::new(
+            day("2026-10-20"),
+            dietlock_core::parse_macro_tenth_g("protein_tenth_g", "12,5").unwrap(),
+            dietlock_core::parse_macro_tenth_g("carbs_tenth_g", "200.3").unwrap(),
+            dietlock_core::parse_macro_tenth_g("fat_tenth_g", "60").unwrap(),
+            dietlock_core::parse_water_ml("1,25").unwrap(),
+        )
+        .unwrap();
+        {
+            let mut s = Store::open(&path).unwrap();
+            s.save_intake(&i, false).unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        assert_eq!(s.get_intake(day("2026-10-20")).unwrap(), Some(i));
+        drop(s);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

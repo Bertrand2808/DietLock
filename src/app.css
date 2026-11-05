@@ -1,0 +1,780 @@
+/* Every colour lives in these variables. Light is the default; dark follows the system. */
+:root {
+  color-scheme: light;
+  --bg: #f7f4ef;
+  --fg: #2a2622;
+  --mut: #857c72;
+  --line: #e5ded4;
+  --card: #fff;
+  --acc: #c0643d;
+  --on-acc: #fff;
+  --ring: rgba(192, 100, 61, 0.18);
+  --bad: #b3261e;
+  --warn: #a86a12;
+  --warn-bg: #f8efe3;
+  --soft: #efe9e1;
+  --check: #2f6fed;
+  --shadow: 0 4px 18px rgba(60, 40, 20, 0.08);
+  --mask: #000;
+  --fade: transparent;
+  --seg-track: #e6dfd6;
+  --seg-on: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #1f1d1b;
+    --fg: #ece7e1;
+    --mut: #9c948b;
+    --line: #34302c;
+    --card: #2a2724;
+    --acc: #e08a63;
+    --on-acc: #1f1d1b;
+    --ring: rgba(224, 138, 99, 0.2);
+    --bad: #ff8a80;
+    --warn: #e6b35c;
+    --warn-bg: #3a2c22;
+    --soft: #2c2926;
+    --check: #7aa2ff;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    --seg-track: #2c2926;
+    --seg-on: #3c3834;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+.titlebar {
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--seg-track);
+  border-radius: 8px;
+}
+
+.seg button {
+  border: 0;
+  background: transparent;
+  color: var(--mut);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.seg.lg button {
+  padding: 4px 14px;
+  font-size: 13px;
+}
+
+.seg button[aria-selected="true"],
+.seg button[aria-pressed="true"] {
+  background: var(--seg-on);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.seg button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.col {
+  width: 640px;
+  max-width: calc(100% - 48px);
+  flex: 1;
+  height: auto;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 22px 0 16px;
+}
+
+.col[hidden] {
+  display: none;
+}
+
+.head {
+  text-align: center;
+  padding: 8px 0 16px;
+}
+
+.trend {
+  margin: 0;
+  min-height: 38px;
+  font: 400 34px/1.1 Georgia, "Iowan Old Style", "Liberation Serif", serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.trend small {
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--mut);
+}
+
+.trend.greet {
+  color: var(--mut);
+}
+
+.sub {
+  margin: 6px 0 0;
+  color: var(--mut);
+  font-variant-numeric: tabular-nums;
+}
+
+.sub b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.card {
+  position: relative;
+  z-index: 2;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 12px 14px 10px;
+}
+
+.card.bad {
+  border-color: var(--bad);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.row + .row {
+  border-top: 1px solid var(--line);
+}
+
+.when {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 184px;
+  flex: none;
+}
+
+.chip {
+  font-size: 11px;
+  background: var(--soft);
+  color: var(--mut);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.chip b {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.chip.pick {
+  position: relative;
+  z-index: 2;
+  border: 0;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+}
+
+.chip.pick .cv {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+.chip.pick.open {
+  box-shadow: 0 0 0 3px var(--ring);
+  background: var(--card);
+  outline: 1px solid var(--acc);
+  color: var(--mut);
+}
+
+.chip.pick.open b {
+  color: var(--fg);
+}
+
+.chip.moved {
+  background: var(--ring);
+  color: var(--acc);
+}
+
+.chip.moved b {
+  color: var(--acc);
+}
+
+.chip.pick,
+.pop button {
+  outline: none;
+}
+
+.chip.pick:focus-visible,
+.pop button:focus-visible {
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.chip.warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.chip.warn b {
+  color: var(--warn);
+}
+
+.forgot {
+  font-size: 11px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--mut);
+}
+
+.field input {
+  width: 64px;
+  text-align: right;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 2px;
+  font-size: 15px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.field input::placeholder {
+  color: var(--mut);
+}
+
+.field input:focus {
+  outline: none;
+  border-bottom-color: var(--acc);
+}
+
+.field input.bad {
+  border-bottom: 2px solid var(--bad);
+  color: var(--bad);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.check input {
+  width: auto;
+  accent-color: var(--check);
+}
+
+.msg {
+  flex: 1 0 100%;
+  margin: 2px 0 0;
+  padding-left: 194px;
+  color: var(--bad);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.pop {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  z-index: 5;
+  width: 232px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 10px;
+}
+
+.pop-q {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pop-q button {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 7px;
+  background: var(--soft);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.pop-q button.sel {
+  background: var(--acc);
+  color: var(--on-acc);
+}
+
+.pop-m {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 2px 2px 6px;
+}
+
+.pop-nav {
+  display: flex;
+  gap: 2px;
+}
+
+.pop-nav button {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mut);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pop-nav button:hover {
+  background: var(--soft);
+  color: var(--fg);
+}
+
+.pop-g {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pop-g .wd {
+  font-weight: 500;
+  color: var(--mut);
+  font-size: 10px;
+  padding-bottom: 2px;
+}
+
+.pop-g button,
+.pop-g .blank {
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.pop-g button {
+  position: relative;
+  cursor: pointer;
+}
+
+.pop-g button:hover:not(.future):not(.sel) {
+  background: var(--soft);
+}
+
+.pop-g button.future {
+  color: var(--mut);
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pop-g button.filled::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--mut);
+  transform: translateX(-50%);
+}
+
+.pop-g button.today {
+  color: var(--acc);
+  font-weight: 700;
+}
+
+.pop-g button.sel {
+  background: var(--acc);
+  color: var(--on-acc);
+  font-weight: 600;
+}
+
+.msg[hidden],
+.forgot[hidden],
+.confirm[hidden],
+.ok[hidden],
+.pop[hidden] {
+  display: none;
+  pointer-events: none;
+}
+
+.confirm {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--soft);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.confirm p {
+  margin: 0 0 8px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.confirm button {
+  border-radius: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+#confirm-replace {
+  border: 0;
+  background: var(--acc);
+  color: var(--on-acc);
+}
+
+#confirm-cancel {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.hint {
+  flex: 1;
+  margin: 0;
+  font-size: 12px;
+  color: var(--mut);
+}
+
+kbd {
+  font: 11px -apple-system, system-ui, sans-serif;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--mut);
+}
+
+.ok {
+  margin: 0;
+  font-size: 12px;
+  color: var(--acc);
+  white-space: nowrap;
+}
+
+.submit {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 0;
+  border-radius: 10px;
+  background: var(--acc);
+  color: var(--on-acc);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.submit:focus-visible,
+.confirm button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.hist {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  margin-top: 18px;
+}
+
+.hist.fade {
+  -webkit-mask-image: linear-gradient(var(--mask) 72%, var(--fade));
+  mask-image: linear-gradient(var(--mask) 72%, var(--fade));
+}
+
+.hist h2 {
+  margin: 6px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mut);
+}
+
+.day {
+  display: flex;
+  gap: 14px;
+  padding: 5px 2px;
+  font-size: 13px;
+  border-bottom: 1px dashed var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.day .dt {
+  width: 112px;
+  flex: none;
+  color: var(--mut);
+}
+
+.day .w {
+  width: 118px;
+  flex: none;
+  font-weight: 600;
+}
+
+.day .w.alert {
+  color: var(--warn);
+}
+
+.day .k {
+  flex: 1;
+  color: var(--mut);
+}
+
+.empty {
+  margin: 0;
+  padding: 56px 12px;
+  text-align: center;
+  color: var(--mut);
+  font: 15px/1.5 Georgia, "Iowan Old Style", "Liberation Serif", serif;
+}
+
+.weight-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.weight-top h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.weight-top h2 span {
+  font-weight: 600;
+}
+
+#w-count {
+  font-weight: 400;
+  color: var(--mut);
+  margin-left: 6px;
+}
+
+.chartbox {
+  position: relative;
+}
+
+.wc {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.wc-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.wc-y,
+.wc-x {
+  fill: var(--mut);
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+.wc-pt {
+  fill: var(--mut);
+}
+
+.wc-trend {
+  fill: none;
+  stroke: var(--acc);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.wc-halo {
+  fill: var(--acc);
+  opacity: 0.18;
+}
+
+.wc-halo.soft {
+  fill: var(--fg);
+  opacity: 0.12;
+}
+
+.wc-end {
+  fill: var(--acc);
+}
+
+.wc-one {
+  fill: var(--fg);
+}
+
+.wc-lbl {
+  fill: var(--fg);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+.chartmsg {
+  position: absolute;
+  left: 12px;
+  right: 40px;
+  top: 16px;
+  bottom: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+  color: var(--fg);
+  font: 15px/1.45 Georgia, "Iowan Old Style", "Liberation Serif", serif;
+}
+
+.chartmsg small {
+  display: block;
+  margin-top: 4px;
+  color: var(--mut);
+  font: 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+.chartmsg.side {
+  top: 28px;
+  bottom: auto;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  max-width: 340px;
+}
+
+.weight-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--mut);
+  font-size: 11px;
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend i {
+  display: inline-block;
+  flex: none;
+}
+
+.legend .lp {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mut);
+}
+
+.legend .lt {
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--acc);
+}

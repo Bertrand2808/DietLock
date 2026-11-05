@@ -5,13 +5,17 @@ use std::sync::Mutex;
 
 use chrono::Timelike;
 use dietlock_core::{
-    Day, Intake, IntakePresence, SwitchHour, WeighIn, check_not_future, parse_macro_g,
-    parse_water_ml, parse_weight_tenth_kg, proposed_weigh_in_date, trend,
+    Day, Intake, IntakePresence, SaveDecision, SwitchHour, TREND_WINDOW_DAYS, WeighIn,
+    check_not_future, decide_intake, decide_water, decide_weigh_in, parse_macro_tenth_g,
+    parse_water_ml, parse_weight_tenth_kg, proposed_intake_date as core_proposed_intake_date,
+    proposed_weigh_in_date, trend,
 };
 use dietlock_store::{SaveError, Store};
 use tauri::State;
 
-use crate::view::{self, IntakeSaveOutcome, IntakeView, Listing, SaveOutcome, WeighInView};
+use crate::view::{
+    self, IntakeSaveOutcome, IntakeView, Listing, SaveOutcome, WeighInView, WeightScreen,
+};
 
 /// Current local day, read from the system clock.
 fn today() -> Result<Day, String> {
@@ -33,12 +37,11 @@ fn now() -> Result<time::Time, String> {
 fn lock(store: &Mutex<Store>) -> Result<std::sync::MutexGuard<'_, Store>, String> {
     store
         .lock()
-        .map_err(|_| "The database is unavailable, restart the app.".to_owned())
+        .map_err(|_| view::database_unavailable_message().to_owned())
 }
 
-/// Saves a weigh-in typed by the user. With `replace` false and the date
-/// already filled, nothing is written and the previous weigh-in is returned
-/// so the UI can ask for confirmation (S3).
+/// Saves a weigh-in typed by the user. The same value writes nothing.
+/// A different value on a filled date asks first (S3).
 #[tauri::command]
 pub fn save_weigh_in(
     store: State<'_, Mutex<Store>>,
@@ -47,21 +50,50 @@ pub fn save_weigh_in(
     date: String,
     replace: bool,
 ) -> Result<SaveOutcome, String> {
-    let date = Day::parse(&date).map_err(|e| view::validation_message(&e))?;
-    let date = check_not_future(date, today()?).map_err(|e| view::validation_message(&e))?;
-    let weight = parse_weight_tenth_kg(&weight_text).map_err(|e| view::validation_message(&e))?;
-    let w = WeighIn::new(date, weight, fasted).map_err(|e| view::validation_message(&e))?;
-    match lock(&store)?.save_weigh_in(&w, replace) {
-        Ok(()) => Ok(SaveOutcome::Saved),
-        Err(SaveError::AlreadyFilled(old)) => Ok(SaveOutcome::AlreadyFilled {
-            old: WeighInView::from(&old),
-        }),
-        Err(SaveError::Store(e)) => Err(view::store_message(&e)),
+    let msg = |e: dietlock_core::ValidationError| view::validation_message(&e);
+    let date = Day::parse(&date).map_err(msg)?;
+    let date = check_not_future(date, today()?).map_err(msg)?;
+    let weight = parse_weight_tenth_kg(&weight_text).map_err(msg)?;
+    let next = WeighIn::new(date, weight, fasted).map_err(msg)?;
+    let mut store = lock(&store)?;
+    let existing = store
+        .get_weigh_in(date)
+        .map_err(|e| view::store_message(&e))?;
+    apply_weigh(
+        &mut store,
+        existing,
+        decide_weigh_in(existing, next),
+        replace,
+    )
+}
+
+fn apply_weigh(
+    store: &mut Store,
+    existing: Option<WeighIn>,
+    decision: SaveDecision<WeighIn>,
+    replace: bool,
+) -> Result<SaveOutcome, String> {
+    match decision {
+        SaveDecision::Unchanged => Ok(SaveOutcome::Unchanged),
+        SaveDecision::Write { confirm: true, .. } if !replace => {
+            let old = existing.expect("a weigh-in confirmation only happens when a row is stored");
+            Ok(SaveOutcome::AlreadyFilled {
+                old: WeighInView::from(&old),
+            })
+        }
+        SaveDecision::Write { value, .. } => match store.save_weigh_in(&value, true) {
+            Ok(()) => Ok(SaveOutcome::Saved),
+            Err(SaveError::AlreadyFilled(old)) => Ok(SaveOutcome::AlreadyFilled {
+                old: WeighInView::from(&old),
+            }),
+            Err(SaveError::Store(e)) => Err(view::store_message(&e)),
+        },
     }
 }
 
-/// Saves the macros typed by the user; an empty water text saves no water.
-/// Same confirmation pattern as [`save_weigh_in`].
+/// Saves the intake typed by the user. Blank macros with water update only
+/// the water of an existing intake (S3, S4). An empty water text on a full
+/// intake saves no water.
 #[tauri::command]
 pub fn save_intake(
     store: State<'_, Mutex<Store>>,
@@ -75,17 +107,54 @@ pub fn save_intake(
     let msg = |e: dietlock_core::ValidationError| view::validation_message(&e);
     let date = Day::parse(&date).map_err(msg)?;
     let date = check_not_future(date, today()?).map_err(msg)?;
-    let protein = parse_macro_g("protein_g", &protein_text).map_err(msg)?;
-    let carbs = parse_macro_g("carbs_g", &carbs_text).map_err(msg)?;
-    let fat = parse_macro_g("fat_g", &fat_text).map_err(msg)?;
-    let water = parse_water_ml(&water_text).map_err(msg)?;
-    let i = Intake::new(date, protein, carbs, fat, water).map_err(msg)?;
-    match lock(&store)?.save_intake(&i, replace) {
-        Ok(()) => Ok(IntakeSaveOutcome::Saved),
-        Err(SaveError::AlreadyFilled(old)) => Ok(IntakeSaveOutcome::AlreadyFilled {
-            old: IntakeView::from(&old),
-        }),
-        Err(SaveError::Store(e)) => Err(view::store_message(&e)),
+    let mut store = lock(&store)?;
+    let existing = store
+        .get_intake(date)
+        .map_err(|e| view::store_message(&e))?;
+    let blank = |text: &str| text.trim().is_empty();
+    let decision = if blank(&protein_text) && blank(&carbs_text) && blank(&fat_text) {
+        match parse_water_ml(&water_text).map_err(msg)? {
+            None => return Ok(IntakeSaveOutcome::Unchanged),
+            Some(ml) => {
+                let Some(old) = existing else {
+                    return Err(msg(parse_macro_tenth_g("protein_tenth_g", "")
+                        .expect_err("an empty macro is not a number")));
+                };
+                decide_water(old, ml)
+            }
+        }
+    } else {
+        let protein = parse_macro_tenth_g("protein_tenth_g", &protein_text).map_err(msg)?;
+        let carbs = parse_macro_tenth_g("carbs_tenth_g", &carbs_text).map_err(msg)?;
+        let fat = parse_macro_tenth_g("fat_tenth_g", &fat_text).map_err(msg)?;
+        let water = parse_water_ml(&water_text).map_err(msg)?;
+        let next = Intake::new(date, protein, carbs, fat, water).map_err(msg)?;
+        decide_intake(existing, next)
+    };
+    apply_intake(&mut store, existing, decision, replace)
+}
+
+fn apply_intake(
+    store: &mut Store,
+    existing: Option<Intake>,
+    decision: SaveDecision<Intake>,
+    replace: bool,
+) -> Result<IntakeSaveOutcome, String> {
+    match decision {
+        SaveDecision::Unchanged => Ok(IntakeSaveOutcome::Unchanged),
+        SaveDecision::Write { confirm: true, .. } if !replace => {
+            let old = existing.expect("an intake confirmation only happens when a row is stored");
+            Ok(IntakeSaveOutcome::AlreadyFilled {
+                old: IntakeView::from(&old),
+            })
+        }
+        SaveDecision::Write { value, .. } => match store.save_intake(&value, true) {
+            Ok(()) => Ok(IntakeSaveOutcome::Saved),
+            Err(SaveError::AlreadyFilled(old)) => Ok(IntakeSaveOutcome::AlreadyFilled {
+                old: IntakeView::from(&old),
+            }),
+            Err(SaveError::Store(e)) => Err(view::store_message(&e)),
+        },
     }
 }
 
@@ -106,30 +175,60 @@ pub fn proposed_intake_date(store: State<'_, Mutex<Store>>) -> Result<String, St
         yesterday: has(yesterday)?,
         today: has(today)?,
     };
-    let p = dietlock_core::proposed_intake_date(today, now()?, SwitchHour::default(), presence);
+    let p = core_proposed_intake_date(today, now()?, SwitchHour::default(), presence);
     Ok(p.date.to_string())
 }
 
-/// Weigh-in and intake of each of the last [`view::HISTORY_DAYS`] days,
-/// today's trend and the date proposed for a new weigh-in (D1).
+/// Home screen: trend, the dates proposed for the weigh-in (D1) and the
+/// intake (D2–D8), and the last [`view::HISTORY_DAYS`] days.
+///
+/// Weigh-ins start one trend window before the history, so an alert on the
+/// oldest visible day can still see the previous day's trend (A1). The
+/// proposed intake date comes from `dietlock_core`; this function does not
+/// reimplement it.
 #[tauri::command]
 pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
     let today = today()?;
+    let now = now()?;
     let from = view::history_start(today);
+    let weigh_from = from.minus_days(TREND_WINDOW_DAYS).unwrap_or(from);
     let store = lock(&store)?;
     let weigh_ins = store
-        .list_weigh_ins(from, today)
+        .list_weigh_ins(weigh_from, today)
         .map_err(|e| view::store_message(&e))?;
     let intakes = store
         .list_intakes(from, today)
         .map_err(|e| view::store_message(&e))?;
     // The history covers the trend window, and the store holds one row per date.
-    let trend = trend(&weigh_ins, today).map_err(|e| e.to_string())?;
+    let trend = trend(&weigh_ins, today).map_err(|_| view::duplicate_date_message().to_owned())?;
+    let yesterday = today.previous().unwrap_or(today);
+    let presence = IntakePresence {
+        yesterday: intakes.iter().any(|i| i.date() == yesterday),
+        today: intakes.iter().any(|i| i.date() == today),
+    };
+    let proposed = core_proposed_intake_date(today, now, SwitchHour::default(), presence);
     Ok(Listing::new(
         today,
+        now.hour(),
         proposed_weigh_in_date(today),
+        proposed,
         &weigh_ins,
         &intakes,
         trend,
     ))
+}
+
+/// Weight screen: one point per weigh-in and the trend of each day, over 30 days.
+/// The 15-day window is the same series, trimmed. The trend is `dietlock_core::trend`.
+#[tauri::command]
+pub fn weight_curve(store: State<'_, Mutex<Store>>) -> Result<WeightScreen, String> {
+    let today = today()?;
+    let store = lock(&store)?;
+    // Every saved weigh-in. The empty and single notices count the whole history,
+    // and a trend at the left edge of the chart reads six days before that edge.
+    let from = Day::parse("1000-01-01").map_err(|e| view::validation_message(&e))?;
+    let weigh_ins = store
+        .list_weigh_ins(from, today)
+        .map_err(|e| view::store_message(&e))?;
+    WeightScreen::new(today, &weigh_ins).map_err(|_| view::duplicate_date_message().to_owned())
 }

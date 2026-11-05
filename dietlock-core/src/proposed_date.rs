@@ -6,7 +6,7 @@ use crate::error::{ValidationError, check_range};
 use time::Time;
 
 /// Hour before which an intake is attributed to the previous day (D2-D3).
-/// The D8 window opens at this hour.
+/// The morning D8 window opens at this hour. Noon does not move with it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SwitchHour(u8);
 
@@ -29,7 +29,7 @@ impl Default for SwitchHour {
     }
 }
 
-/// The D8 window ends strictly before this hour.
+/// The morning D8 window ends at noon. From this hour, only yesterday matters.
 const D8_END_HOUR: u8 = 12;
 
 /// Which of the two days around the current one already hold an intake.
@@ -72,7 +72,7 @@ pub fn proposed_intake_date(
             forgotten_yesterday: false,
         };
     }
-    let forgotten_yesterday = hour < D8_END_HOUR && !presence.yesterday && !presence.today;
+    let forgotten_yesterday = proposes_forgotten_yesterday(hour, presence);
     ProposedIntake {
         date: if forgotten_yesterday {
             yesterday
@@ -80,6 +80,16 @@ pub fn proposed_intake_date(
             today
         },
         forgotten_yesterday,
+    }
+}
+
+/// Morning D8 needs both days empty. From noon, only yesterday matters:
+/// a filled today does not cancel a missing yesterday.
+fn proposes_forgotten_yesterday(hour: u8, presence: IntakePresence) -> bool {
+    if hour < D8_END_HOUR {
+        !presence.yesterday && !presence.today
+    } else {
+        !presence.yesterday
     }
 }
 
@@ -151,14 +161,49 @@ mod tests {
         assert!(proposal(7, 0, false, false).forgotten_yesterday);
         assert!(!proposal(7, 0, true, false).forgotten_yesterday);
         assert!(!proposal(7, 0, false, true).forgotten_yesterday);
-        assert!(!proposal(12, 0, false, false).forgotten_yesterday);
+        assert!(proposal(12, 0, false, false).forgotten_yesterday);
+        assert!(proposal(14, 0, false, true).forgotten_yesterday);
+        assert!(!proposal(14, 0, true, false).forgotten_yesterday);
     }
 
     #[test]
-    fn d2_from_noon_is_today() {
-        assert_eq!(at(12, 0, false, false), day(TUESDAY));
-        assert_eq!(at(12, 1, false, false), day(TUESDAY));
-        assert_eq!(at(23, 59, false, false), day(TUESDAY));
+    fn d8_from_noon_empty_yesterday_is_yesterday() {
+        assert_eq!(at(12, 0, false, false), day(MONDAY));
+        assert_eq!(at(12, 0, false, true), day(MONDAY));
+        assert_eq!(at(12, 1, false, false), day(MONDAY));
+        assert_eq!(at(23, 59, false, true), day(MONDAY));
+        assert!(proposal(12, 0, false, true).forgotten_yesterday);
+    }
+
+    #[test]
+    fn d8_from_noon_filled_yesterday_is_today() {
+        assert_eq!(at(12, 0, true, false), day(TUESDAY));
+        assert_eq!(at(14, 0, true, false), day(TUESDAY));
+        assert_eq!(at(14, 0, true, true), day(TUESDAY));
+        assert!(!proposal(14, 0, true, true).forgotten_yesterday);
+    }
+
+    #[test]
+    fn d8_at_14_empty_yesterday_filled_today_proposes_yesterday() {
+        let p = proposal(14, 0, false, true);
+        assert_eq!(p.date, day(MONDAY));
+        assert!(p.forgotten_yesterday);
+    }
+
+    #[test]
+    fn d3_switch_hour_does_not_move_noon() {
+        let switch_hour = SwitchHour::new(11).unwrap();
+        let p = proposed_intake_date(
+            day(TUESDAY),
+            time(14, 0),
+            switch_hour,
+            IntakePresence {
+                yesterday: false,
+                today: true,
+            },
+        );
+        assert_eq!(p.date, day(MONDAY));
+        assert!(p.forgotten_yesterday);
     }
 
     #[test]

@@ -21,7 +21,7 @@ The macros and optional water entered for a Day.
 _Avoid_: Meal, food log
 
 **Macros**:
-The protein, carbohydrate and fat amounts of an Intake, in whole grams. They are entered together.
+The protein, carbohydrate and fat amounts of an Intake, in grams with at most one decimal. They are entered together.
 _Avoid_: Nutrients, nutrition values
 
 **Energy**:

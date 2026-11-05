@@ -3,38 +3,176 @@
   <head>
     <meta charset="UTF-8" />
     <title>DietLock</title>
-    <script src="main.js" defer></script>
+    <link rel="stylesheet" href="app.css" />
+    <script type="module" src="main.js"></script>
   </head>
   <body>
-    <h2>Pesée</h2>
-    <form id="weigh-in-form">
-      <label>Poids (kg) <input id="weight" type="text" inputmode="decimal" autocomplete="off" required /></label>
-      <label><input id="fasted" type="checkbox" checked /> À jeun</label>
-      <label>Date <input id="date" type="date" required /></label>
-      <button type="submit">Enregistrer</button>
-    </form>
+    <header class="titlebar" data-tauri-drag-region>
+      <div class="seg lg" role="tablist" aria-label="Écran">
+        <button type="button" id="tab-today" role="tab" aria-selected="true" aria-controls="screen-today">
+          Aujourd'hui
+        </button>
+        <button type="button" id="tab-weight" role="tab" aria-selected="false" aria-controls="screen-weight">
+          Poids
+        </button>
+      </div>
+    </header>
+    <main class="col" id="screen-today">
+      <header class="head">
+        <h1 id="headline" class="trend"></h1>
+        <p id="subhead" class="sub"></p>
+      </header>
 
-    <h2>Alimentation</h2>
-    <form id="intake-form">
-      <label>Protéines (g) <input id="protein" type="text" inputmode="numeric" autocomplete="off" /></label>
-      <label>Glucides (g) <input id="carbs" type="text" inputmode="numeric" autocomplete="off" /></label>
-      <label>Lipides (g) <input id="fat" type="text" inputmode="numeric" autocomplete="off" /></label>
-      <label>Eau (L, facultatif) <input id="water" type="text" inputmode="decimal" autocomplete="off" /></label>
-      <label>Date <input id="intake-date" type="date" required /></label>
-      <button type="submit">Enregistrer</button>
-    </form>
+      <form id="entry" class="card" novalidate>
+        <div class="row">
+          <div class="when">
+            <button
+              type="button"
+              class="chip pick"
+              id="weigh-chip"
+              tabindex="-1"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-label="Date de la pesée"
+            ></button>
+          </div>
+          <label class="field">
+            <input
+              id="weight"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="—"
+              aria-label="Poids en kilogrammes"
+            />
+            <span>kg</span>
+          </label>
+          <label class="check">
+            <input id="fasted" type="checkbox" checked />
+            à jeun
+          </label>
+          <p class="msg" id="weigh-error" role="alert" hidden></p>
+        </div>
 
-    <p id="error" role="alert" hidden></p>
-    <div id="confirm" hidden>
-      <p id="confirm-text"></p>
-      <button id="confirm-replace" type="button">Remplacer</button>
-      <button id="confirm-cancel" type="button">Annuler</button>
-    </div>
+        <div class="row">
+          <div class="when">
+            <button
+              type="button"
+              class="chip pick"
+              id="intake-chip"
+              tabindex="-1"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-label="Date de l'alimentation"
+            ></button>
+            <span class="forgot" id="forgot" hidden>hier oublié</span>
+          </div>
+          <label class="field">
+            P
+            <input
+              id="protein"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="—"
+              aria-label="Protéines en grammes"
+            />
+            g
+          </label>
+          <label class="field">
+            G
+            <input
+              id="carbs"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="—"
+              aria-label="Glucides en grammes"
+            />
+            g
+          </label>
+          <label class="field">
+            L
+            <input
+              id="fat"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="—"
+              aria-label="Lipides en grammes"
+            />
+            g
+          </label>
+          <label class="field">
+            Eau
+            <input
+              id="water"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="—"
+              aria-label="Eau en litres"
+            />
+            L
+          </label>
+          <p class="msg" id="intake-error" role="alert" hidden></p>
+        </div>
 
-    <h2>Tendance du jour</h2>
-    <p id="trend"></p>
+        <div class="confirm" id="confirm" hidden>
+          <p id="confirm-text"></p>
+          <div class="confirm-actions">
+            <button id="confirm-replace" type="button">Remplacer</button>
+            <button id="confirm-cancel" type="button">Annuler</button>
+          </div>
+        </div>
 
-    <h2>30 derniers jours</h2>
-    <ul id="days"></ul>
+        <div class="pop" id="date-pop" hidden role="dialog" aria-label="Choisir la date">
+          <div class="pop-q">
+            <button type="button" id="date-today">Aujourd'hui</button>
+            <button type="button" id="date-yesterday">Hier</button>
+          </div>
+          <div class="pop-m">
+            <span id="date-pop-title"></span>
+            <span class="pop-nav">
+              <button type="button" id="date-prev" aria-label="Mois précédent">‹</button>
+              <button type="button" id="date-next" aria-label="Mois suivant">›</button>
+            </span>
+          </div>
+          <div class="pop-g" id="date-pop-grid"></div>
+        </div>
+
+        <div class="bar">
+          <p class="hint"><kbd>Tab</kbd> champ suivant · <kbd>⌘</kbd><kbd>↩</kbd> enregistrer</p>
+          <p class="ok" id="saved" role="status" hidden>✓ Journée enregistrée</p>
+          <button id="save" class="submit" type="button" title="Enregistrer">↑</button>
+        </div>
+      </form>
+
+      <section class="hist" id="hist" aria-label="Historique"></section>
+    </main>
+
+    <main class="col" id="screen-weight" hidden>
+      <header class="head">
+        <h1 id="w-headline" class="trend"></h1>
+        <p id="w-sub" class="sub"></p>
+      </header>
+      <section class="card weight-card">
+        <div class="weight-top">
+          <h2><span id="w-range">15 derniers jours</span> <span id="w-count"></span></h2>
+          <div class="seg" id="span-seg" role="group" aria-label="Période">
+            <button type="button" data-span="15" aria-pressed="true">15 j</button>
+            <button type="button" data-span="30" aria-pressed="false">30 j</button>
+          </div>
+        </div>
+        <div class="chartbox" id="chartbox"></div>
+        <div class="weight-foot">
+          <div class="legend">
+            <span><i class="lp"></i>pesée</span>
+            <span><i class="lt"></i>tendance, moyenne sur 7 jours</span>
+          </div>
+          <p class="hint" id="w-hint"></p>
+        </div>
+      </section>
+    </main>
   </body>
 </html>

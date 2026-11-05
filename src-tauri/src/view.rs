@@ -2,8 +2,9 @@
 //! Pure functions, so they are unit-tested without a running app.
 
 use dietlock_core::{
-    Day, Intake, MACRO_G_MAX, TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX,
-    WEIGHT_TENTH_KG_MIN, WeighIn, display_tenth_kg, energy_kcal,
+    Day, DuplicateDate, Intake, MACRO_G_MAX, ProposedIntake, TREND_WINDOW_DAYS, ValidationError,
+    WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert, display_tenth_kg, energy_kcal, trend,
+    variation,
 };
 use dietlock_store::StoreError;
 use serde::Serialize;
@@ -25,6 +26,27 @@ pub fn format_tenth_kg(tenth: i32) -> String {
     let sign = if tenth < 0 { "-" } else { "" };
     let abs = tenth.unsigned_abs();
     format!("{sign}{},{}", abs / 10, abs % 10)
+}
+
+/// `scale` 10 writes tenths (`12,5`) and `scale` 100 writes hundredths (`1,25`).
+/// A zero fraction is omitted (`60`, `2`).
+fn format_trimmed(value: u32, scale: u32) -> String {
+    let whole = value / scale;
+    let frac = value % scale;
+    if frac == 0 {
+        return whole.to_string();
+    }
+    let width = scale.ilog10() as usize;
+    let mut digits = format!("{frac:0width$}");
+    while digits.ends_with('0') {
+        digits.pop();
+    }
+    format!("{whole},{digits}")
+}
+
+/// Millilitres written as litres. Saved water is a multiple of 10 ml.
+fn format_water_l(ml: u16) -> String {
+    format_trimmed(u32::from(ml) / 10, 100)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -49,10 +71,12 @@ impl From<&WeighIn> for WeighInView {
 #[serde(rename_all = "camelCase")]
 pub struct IntakeView {
     pub date: String,
-    pub protein_g: u16,
-    pub carbs_g: u16,
-    pub fat_g: u16,
-    /// Litres with a decimal comma, e.g. `1,5`; `None` when not entered.
+    /// Grams with a decimal comma, trailing zero omitted, e.g. `12,5` or `60`.
+    pub protein_g: String,
+    pub carbs_g: String,
+    pub fat_g: String,
+    /// Litres with a decimal comma, trailing zeros omitted, e.g. `1,25` or `2`.
+    /// `None` when not entered.
     pub water: Option<String>,
     pub energy_kcal: u32,
 }
@@ -61,11 +85,10 @@ impl From<&Intake> for IntakeView {
     fn from(i: &Intake) -> Self {
         Self {
             date: i.date().to_string(),
-            protein_g: i.protein_g(),
-            carbs_g: i.carbs_g(),
-            fat_g: i.fat_g(),
-            // The core stores water in whole tenths of a litre (100 ml).
-            water: i.water_ml().map(|ml| format_tenth_kg(i32::from(ml / 100))),
+            protein_g: format_trimmed(u32::from(i.protein_tenth_g()), 10),
+            carbs_g: format_trimmed(u32::from(i.carbs_tenth_g()), 10),
+            fat_g: format_trimmed(u32::from(i.fat_tenth_g()), 10),
+            water: i.water_ml().map(format_water_l),
             energy_kcal: energy_kcal(i),
         }
     }
@@ -76,6 +99,8 @@ impl From<&Intake> for IntakeView {
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum IntakeSaveOutcome {
     Saved,
+    /// The typed intake matches the stored one. Nothing was written.
+    Unchanged,
     /// The date already holds `old`; nothing was written.
     AlreadyFilled {
         old: IntakeView,
@@ -87,6 +112,14 @@ pub enum IntakeSaveOutcome {
 #[serde(rename_all = "camelCase")]
 pub struct DayView {
     pub date: String,
+    /// Short French date, e.g. `dim. 25 oct.`.
+    pub label: String,
+    /// `78,4 kg` when the day has a weigh-in.
+    pub weight_label: Option<String>,
+    /// Energy, water and a non-fasted note. Macro grams are not included.
+    pub detail: Option<String>,
+    /// A1–A3: fasted weigh-in at least 3 kg from the previous day's trend.
+    pub alert: bool,
     pub weigh_in: Option<WeighInView>,
     pub intake: Option<IntakeView>,
 }
@@ -96,6 +129,8 @@ pub struct DayView {
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum SaveOutcome {
     Saved,
+    /// The typed weigh-in matches the stored one. Nothing was written.
+    Unchanged,
     /// The date already holds `old`; nothing was written.
     AlreadyFilled {
         old: WeighInView,
@@ -107,105 +142,434 @@ pub enum SaveOutcome {
 pub struct Listing {
     /// Today, which is also the maximum date of the form.
     pub today: String,
-    /// Date proposed for a new weigh-in.
-    pub proposed_date: String,
+    /// Big serif line: the trend (`78,5`) or a greeting (`Bonsoir.`). Empty when neither.
+    pub primary: String,
+    /// `primary` is the trend weight, so the screen adds "kg de tendance".
+    pub is_trend: bool,
+    /// Line under the headline: kcal, the empty-state invitation, or both.
+    pub subtitle: String,
+    /// Date proposed for the weigh-in (D1).
+    pub weigh_in_date: String,
+    /// `Aujourd'hui` or `Hier`.
+    pub weigh_in_when: String,
+    /// Short French date of the weigh-in, e.g. `lun. 26 oct.`.
+    pub weigh_in_label: String,
+    /// Date proposed for the intake (D2–D8).
+    pub intake_date: String,
+    pub intake_when: String,
+    pub intake_label: String,
+    /// D8 chose yesterday because it has no intake.
+    pub forgotten_yesterday: bool,
     /// Every day from today back to the history start, most recent first.
     pub days: Vec<DayView>,
     /// Today's trend as displayed, `None` when there is none yet.
     pub trend: Option<String>,
 }
 
+/// `Bonjour.` from 5:00 until 18:00, `Bonsoir.` otherwise.
+pub fn greeting(hour: u8) -> &'static str {
+    if (5..18).contains(&hour) {
+        "Bonjour."
+    } else {
+        "Bonsoir."
+    }
+}
+
+/// Whole kcal with a narrow no-break space as the thousands separator.
+fn format_kcal(kcal: u32) -> String {
+    let digits = kcal.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            out.push('\u{202f}');
+        }
+        out.push(c);
+    }
+    out.chars().rev().collect()
+}
+
+fn french_month(month: u8) -> &'static str {
+    const MONTHS: [&str; 12] = [
+        "janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.",
+        "déc.",
+    ];
+    MONTHS[usize::from(month) - 1]
+}
+
+/// `dim. 25 oct.`.
+pub fn french_date(day: Day) -> String {
+    const WEEKDAYS: [&str; 7] = ["dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."];
+    let weekday = WEEKDAYS[usize::from(day.weekday_index())];
+    format!(
+        "{weekday} {} {}",
+        day.day_number(),
+        french_month(day.month_number())
+    )
+}
+
+/// `25 oct.`, the chart axis form of [`french_date`].
+fn axis_label(day: Day) -> String {
+    format!("{} {}", day.day_number(), french_month(day.month_number()))
+}
+
+/// Days in the weight chart. The screen opens on the short window.
+pub const CURVE_SHORT_DAYS: u16 = 15;
+/// Longest window the weight chart offers.
+pub const CURVE_LONG_DAYS: u16 = 30;
+
+/// One calendar day of the weight chart.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurveDay {
+    pub date: String,
+    /// Day and month, e.g. `20 oct.`.
+    pub label: String,
+    /// Weigh-in of that day, in tenths of a kg. Present whether or not it was fasted.
+    pub weigh_tenth_kg: Option<u16>,
+    /// Displayed trend of that day, in tenths of a kg.
+    /// `None` when the day has fewer than 4 fasted weigh-ins in its window (T3).
+    pub trend_tenth_kg: Option<i32>,
+}
+
+/// The plotted window: one row per calendar day, oldest first, plus the change
+/// from the first day to the last.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeightCurve {
+    pub days: Vec<CurveDay>,
+    /// Displayed change across the window, in tenths of a kg.
+    /// `None` when the first day or today has no trend (T8).
+    pub variation_tenth_kg: Option<i32>,
+}
+
+impl WeightCurve {
+    /// `days` calendar days ending at `today`, inclusive.
+    /// `weigh_ins` may extend before the window. The trend of each day is
+    /// [`dietlock_core::trend`]. A duplicate date is refused, as there.
+    pub fn build(today: Day, weigh_ins: &[WeighIn], days: u16) -> Result<Self, DuplicateDate> {
+        let mut curve_days = Vec::with_capacity(usize::from(days));
+        for ago in (0..days).rev() {
+            let Some(date) = today.minus_days(ago) else {
+                continue;
+            };
+            let trend_tenth_kg = trend(weigh_ins, date)?
+                .and_then(|hundredth| i32::try_from(hundredth).ok())
+                .map(display_tenth_kg);
+            let weigh_tenth_kg = weigh_ins
+                .iter()
+                .find(|w| w.date() == date)
+                .map(|w| w.weight_tenth_kg());
+            curve_days.push(CurveDay {
+                label: axis_label(date),
+                date: date.to_string(),
+                weigh_tenth_kg,
+                trend_tenth_kg,
+            });
+        }
+        // The window spans `days` dates, so its two ends are `days - 1` apart.
+        let variation_tenth_kg = if days <= 1 {
+            None
+        } else {
+            variation(weigh_ins, today, days - 1)?
+        };
+        Ok(Self {
+            days: curve_days,
+            variation_tenth_kg,
+        })
+    }
+}
+
+/// The chart states that are a sentence rather than a series.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum CurveNotice {
+    Empty {
+        headline: String,
+        subtitle: String,
+        chart_title: String,
+        chart_note: String,
+    },
+    Single {
+        /// Displayed weight, e.g. `78,4`.
+        weight: String,
+        /// The only weigh-in falls on today.
+        today: bool,
+        title: String,
+        note: String,
+    },
+}
+
+/// Weight screen: thirty days of points and trends, both window variations,
+/// and the empty or single-weigh-in notice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeightScreen {
+    pub days: Vec<CurveDay>,
+    /// [`variation`] over the 15-day window.
+    pub short_variation: Option<i32>,
+    /// [`variation`] over the 30-day window.
+    pub long_variation: Option<i32>,
+    /// Today's trend as displayed, `None` when there is none yet.
+    pub trend: Option<String>,
+    pub notice: Option<CurveNotice>,
+}
+
+impl WeightScreen {
+    /// `weigh_ins` is every saved weigh-in, not only the chart window.
+    /// The empty and single notices depend on that total.
+    pub fn new(today: Day, weigh_ins: &[WeighIn]) -> Result<Self, DuplicateDate> {
+        let short = WeightCurve::build(today, weigh_ins, CURVE_SHORT_DAYS)?;
+        let long = WeightCurve::build(today, weigh_ins, CURVE_LONG_DAYS)?;
+        let trend_label = long
+            .days
+            .last()
+            .and_then(|d| d.trend_tenth_kg)
+            .map(format_tenth_kg);
+        let notice = match weigh_ins {
+            [] => Some(CurveNotice::Empty {
+                headline: "Pas encore de courbe.".to_owned(),
+                subtitle: "La tendance apparaîtra après 4 pesées à jeun.".to_owned(),
+                chart_title: "Ta courbe se dessinera ici.".to_owned(),
+                chart_note: "Pèse-toi dans Aujourd'hui, elle commencera là.".to_owned(),
+            }),
+            [only] => Some(CurveNotice::Single {
+                weight: format_tenth_kg(i32::from(only.weight_tenth_kg())),
+                today: only.date() == today,
+                title: "Une pesée pour l'instant.".to_owned(),
+                note: "La tendance se trace dès 4 pesées à jeun sur 7 jours. La prochaine, demain matin."
+                    .to_owned(),
+            }),
+            _ => None,
+        };
+        Ok(Self {
+            days: long.days,
+            short_variation: short.variation_tenth_kg,
+            long_variation: long.variation_tenth_kg,
+            trend: trend_label,
+            notice,
+        })
+    }
+}
+
+fn relative_name(date: Day, today: Day) -> &'static str {
+    if date == today { "Aujourd'hui" } else { "Hier" }
+}
+
+/// Energy and water of the day, plus a note when the weigh-in was not fasted.
+/// The macro grams stay out of this line.
+fn history_detail(fasted: Option<bool>, intake: Option<&IntakeView>) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(i) = intake {
+        parts.push(format!("{} kcal", format_kcal(i.energy_kcal)));
+        if let Some(water) = &i.water {
+            parts.push(format!("eau {water} L"));
+        }
+    }
+    if fasted == Some(false) {
+        parts.push("pas à jeun".to_owned());
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" · "))
+    }
+}
+
+fn kcal_phrase(today_kcal: Option<u32>, yesterday_kcal: Option<u32>) -> Option<String> {
+    match (today_kcal, yesterday_kcal) {
+        (Some(kcal), _) => Some(format!("Aujourd'hui · {} kcal", format_kcal(kcal))),
+        (None, Some(kcal)) => Some(format!("Hier · {} kcal", format_kcal(kcal))),
+        (None, None) => None,
+    }
+}
+
 impl Listing {
-    /// `weigh_ins` and `intakes` within the history, one per date at most;
-    /// `trend_hundredth` as returned by `dietlock_core::trend`.
+    /// `weigh_ins` may start one trend window before the history, so each
+    /// row can be checked for an alert. `intakes` cover the history.
+    /// One row per date at most. `trend_hundredth` is `dietlock_core::trend`
+    /// of `today`. `hour` is the local hour, used only for the empty greeting.
     pub fn new(
         today: Day,
-        proposed_date: Day,
+        hour: u8,
+        weigh_in_day: Day,
+        proposed_intake: ProposedIntake,
         weigh_ins: &[WeighIn],
         intakes: &[Intake],
         trend_hundredth: Option<u32>,
     ) -> Self {
+        let from = history_start(today);
+        let has_data = weigh_ins
+            .iter()
+            .any(|w| w.date() >= from && w.date() <= today)
+            || intakes
+                .iter()
+                .any(|i| i.date() >= from && i.date() <= today);
         let days = (0..HISTORY_DAYS)
             .map_while(|n| today.minus_days(n))
-            .map(|d| DayView {
-                date: d.to_string(),
-                weigh_in: weigh_ins
-                    .iter()
-                    .find(|w| w.date() == d)
-                    .map(WeighInView::from),
-                intake: intakes.iter().find(|i| i.date() == d).map(IntakeView::from),
+            .map(|d| {
+                let weigh_in = weigh_ins.iter().find(|w| w.date() == d);
+                let intake = intakes.iter().find(|i| i.date() == d);
+                let weigh_view = weigh_in.map(WeighInView::from);
+                let intake_view = intake.map(IntakeView::from);
+                let alerts = weigh_in.is_some_and(|w| alert(weigh_ins, w).unwrap_or(false));
+                DayView {
+                    label: french_date(d),
+                    weight_label: weigh_view.as_ref().map(|w| format!("{} kg", w.weight)),
+                    detail: history_detail(weigh_in.map(|w| w.fasted()), intake_view.as_ref()),
+                    alert: alerts,
+                    date: d.to_string(),
+                    weigh_in: weigh_view,
+                    intake: intake_view,
+                }
             })
             .collect();
+        let trend = trend_hundredth
+            .and_then(|h| i32::try_from(h).ok())
+            .map(|h| format_tenth_kg(display_tenth_kg(h)));
+        let yesterday = today.previous();
+        let kcal_on = |day: Day| intakes.iter().find(|i| i.date() == day).map(energy_kcal);
+        let today_kcal = kcal_on(today);
+        let yesterday_kcal = yesterday.and_then(kcal_on);
+        let phrase = kcal_phrase(today_kcal, yesterday_kcal);
+        let (primary, is_trend, subtitle) = if let Some(weight) = trend.clone() {
+            let subtitle = match phrase {
+                Some(kcal) => format!("{kcal} · moyenne à jeun sur 7 jours"),
+                None => "Moyenne à jeun sur 7 jours".to_owned(),
+            };
+            (weight, true, subtitle)
+        } else if !has_data {
+            (
+                greeting(hour).to_owned(),
+                false,
+                "Pas encore de saisie. La tendance apparaîtra après 4 pesées à jeun.".to_owned(),
+            )
+        } else {
+            let subtitle = match phrase {
+                Some(kcal) => format!("{kcal}. La tendance apparaîtra après 4 pesées à jeun."),
+                None => "La tendance apparaîtra après 4 pesées à jeun.".to_owned(),
+            };
+            (String::new(), false, subtitle)
+        };
         Self {
             today: today.to_string(),
-            proposed_date: proposed_date.to_string(),
+            primary,
+            is_trend,
+            subtitle,
+            weigh_in_date: weigh_in_day.to_string(),
+            weigh_in_when: relative_name(weigh_in_day, today).to_owned(),
+            weigh_in_label: french_date(weigh_in_day),
+            intake_date: proposed_intake.date.to_string(),
+            intake_when: relative_name(proposed_intake.date, today).to_owned(),
+            intake_label: french_date(proposed_intake.date),
+            forgotten_yesterday: proposed_intake.forgotten_yesterday,
             days,
-            trend: trend_hundredth
-                .and_then(|h| i32::try_from(h).ok())
-                .map(|h| format_tenth_kg(display_tenth_kg(h))),
+            trend,
         }
     }
 }
 
 /// Message shown to the user for a refused input.
+///
+/// Wording lives here: `dietlock-core` keeps its own error text.
 pub fn validation_message(e: &ValidationError) -> String {
     match e {
         ValidationError::OutOfRange {
             field: "weight_tenth_kg",
             ..
         } => format!(
-            "The weight must be between {} and {} kg.",
+            "Le poids doit être compris entre {} et {} kg.",
             format_tenth_kg(i32::from(WEIGHT_TENTH_KG_MIN)),
             format_tenth_kg(i32::from(WEIGHT_TENTH_KG_MAX)),
         ),
         ValidationError::InvalidNumber {
             field: "weight_tenth_kg",
             input,
-        } => format!("{input:?} is not a weight: type kg with at most one decimal, e.g. 82,6."),
-        ValidationError::InvalidNumber { field, input } if macro_label(field).is_some() => {
-            let label = macro_label(field).unwrap_or(field);
+        } => format!(
+            "{input:?} n'est pas un poids : indiquez des kilogrammes avec au plus une décimale, par exemple 82,6."
+        ),
+        ValidationError::InvalidNumber { field, input } if macro_name(field).is_some() => {
+            let name = macro_name(field).unwrap_or(field);
             if input.is_empty() {
-                format!("{label} is required.")
+                format!("Les {name} sont obligatoires.")
             } else {
-                format!("{input:?} is not valid for {label}: type whole grams, e.g. 150.")
+                format!(
+                    "{input:?} n'est pas valide pour les {name} : indiquez des grammes avec au plus une décimale, par exemple 12,5."
+                )
             }
         }
-        ValidationError::OutOfRange { field, .. } if macro_label(field).is_some() => format!(
-            "{} must be between 0 and {MACRO_G_MAX} g.",
-            macro_label(field).unwrap_or(field)
-        ),
+        ValidationError::OutOfRange { field, .. } if macro_name(field).is_some() => {
+            format!(
+                "Les {} doivent rester entre 0 et {MACRO_G_MAX} g.",
+                macro_name(field).unwrap_or(field)
+            )
+        }
         ValidationError::InvalidNumber {
             field: "water_ml",
             input,
-        } => format!("{input:?} is not a water amount: type litres, e.g. 1,5, or leave it empty."),
+        } => format!(
+            "{input:?} n'est pas une quantité d'eau : indiquez des litres avec au plus deux décimales, par exemple 1,25, ou laissez le champ vide."
+        ),
         ValidationError::OutOfRange {
             field: "water_ml", ..
-        } => "Water must be between 0 and 10,0 L.".to_owned(),
-        ValidationError::FutureDate(d) => format!("The date {d} is in the future."),
-        ValidationError::InvalidDate(d) => format!("The date {d:?} is not valid."),
-        other => other.to_string(),
+        } => "L'eau doit être comprise entre 0 et 10,0 L.".to_owned(),
+        ValidationError::FutureDate(d) => {
+            let label = Day::parse(d).map(french_date).unwrap_or_else(|_| d.clone());
+            format!("{label} est dans le futur, choisis aujourd'hui ou avant.")
+        }
+        ValidationError::InvalidDate(d) => format!("La date {d:?} n'est pas valide."),
+        other => format!("La saisie n'est pas acceptée ({other})."),
     }
 }
 
-/// Label of a macro field, `None` for other fields.
-fn macro_label(field: &str) -> Option<&'static str> {
+/// Noun of a macro field, without an article. `None` for other fields.
+fn macro_name(field: &str) -> Option<&'static str> {
     match field {
-        "protein_g" => Some("Protein"),
-        "carbs_g" => Some("Carbs"),
-        "fat_g" => Some("Fat"),
+        "protein_tenth_g" => Some("protéines"),
+        "carbs_tenth_g" => Some("glucides"),
+        "fat_tenth_g" => Some("lipides"),
         _ => None,
     }
 }
 
 /// Message shown to the user for a database failure.
+///
+/// The SQLite driver text is kept as the library reports it.
 pub fn store_message(e: &StoreError) -> String {
-    format!("The database could not be read or written: {e}")
+    match e {
+        StoreError::Sqlite(err) => {
+            format!("La base de données n'a pas pu être lue ou écrite : {err}")
+        }
+        StoreError::UnsupportedSchemaVersion(version) => {
+            format!("La base de données utilise une version inconnue ({version}).")
+        }
+        StoreError::InvalidRow(_) => "La base de données contient une ligne invalide.".to_owned(),
+    }
+}
+
+/// Shown when the database lock cannot be taken.
+pub fn database_unavailable_message() -> &'static str {
+    "La base de données est indisponible, redémarrez l'application."
+}
+
+/// Shown when the history contains two weigh-ins on the same day.
+pub fn duplicate_date_message() -> &'static str {
+    "Deux pesées portent la même date."
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dietlock_core::{parse_macro_g, parse_water_ml, parse_weight_tenth_kg};
+    use dietlock_core::{
+        IntakePresence, SwitchHour, ValidationError, check_not_future, display_tenth_kg,
+        parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg, proposed_intake_date, trend,
+        variation,
+    };
+    use dietlock_store::StoreError;
+    use time::Time;
 
     fn day(s: &str) -> Day {
         Day::parse(s).unwrap()
@@ -213,6 +577,26 @@ mod tests {
 
     fn weigh(d: &str, w: u16) -> WeighIn {
         WeighIn::new(day(d), w, true).unwrap()
+    }
+
+    fn weigh_at(d: &str, w: u16, fasted: bool) -> WeighIn {
+        WeighIn::new(day(d), w, fasted).unwrap()
+    }
+
+    fn home(today: &str, hour: u8, ws: &[WeighIn], is: &[Intake], trend: Option<u32>) -> Listing {
+        let today = day(today);
+        Listing::new(
+            today,
+            hour,
+            today,
+            ProposedIntake {
+                date: today,
+                forgotten_yesterday: false,
+            },
+            ws,
+            is,
+            trend,
+        )
     }
 
     #[test]
@@ -229,29 +613,30 @@ mod tests {
     }
 
     fn intake(d: &str, water_ml: Option<u16>) -> Intake {
-        Intake::new(day(d), 150, 250, 70, water_ml).unwrap()
+        Intake::new(day(d), 1500, 2500, 700, water_ml).unwrap()
     }
 
     #[test]
     fn listing_is_most_recent_first_with_display_trend() {
         let ws = [weigh("2026-10-12", 800), weigh("2026-10-13", 826)];
-        let l = Listing::new(day("2026-10-13"), day("2026-10-13"), &ws, &[], Some(8025));
+        let l = home("2026-10-13", 10, &ws, &[], Some(8025));
         assert_eq!(l.today, "2026-10-13");
-        assert_eq!(l.proposed_date, "2026-10-13");
+        assert_eq!(l.weigh_in_date, "2026-10-13");
+        assert_eq!(l.weigh_in_when, "Aujourd'hui");
+        assert_eq!(l.weigh_in_label, "mar. 13 oct.");
         assert_eq!(l.days[0].date, "2026-10-13");
         assert_eq!(l.days[0].weigh_in.as_ref().unwrap().weight, "82,6");
         assert_eq!(l.trend.as_deref(), Some("80,3"));
-        assert_eq!(
-            Listing::new(day("2026-10-13"), day("2026-10-13"), &ws, &[], None).trend,
-            None
-        );
+        assert!(l.is_trend);
+        assert_eq!(l.primary, "80,3");
+        assert_eq!(home("2026-10-13", 10, &ws, &[], None).trend, None);
     }
 
     #[test]
     fn listing_has_every_day_with_weigh_in_and_intake_side_by_side() {
         let ws = [weigh("2026-10-11", 800), weigh("2026-10-13", 826)];
         let is = [intake("2026-10-12", Some(1500)), intake("2026-10-13", None)];
-        let l = Listing::new(day("2026-10-13"), day("2026-10-13"), &ws, &is, None);
+        let l = home("2026-10-13", 10, &ws, &is, None);
         assert_eq!(l.days.len(), usize::from(HISTORY_DAYS));
         assert_eq!(l.days[29].date, "2026-09-14");
         let (d13, d12, d11) = (&l.days[0], &l.days[1], &l.days[2]);
@@ -273,22 +658,450 @@ mod tests {
     }
 
     #[test]
-    fn refused_macros_and_water_have_readable_messages() {
-        let empty = validation_message(&parse_macro_g("protein_g", "").unwrap_err());
-        assert_eq!(empty, "Protein is required.");
-        let bad = validation_message(&parse_macro_g("fat_g", "12,5").unwrap_err());
-        assert!(bad.contains("Fat") && bad.contains("whole grams"), "{bad}");
-        let big = validation_message(&parse_macro_g("carbs_g", "1001").unwrap_err());
-        assert_eq!(big, "Carbs must be between 0 and 1000 g.");
-        let water = validation_message(&parse_water_ml("abc").unwrap_err());
-        assert!(water.contains("water"), "{water}");
+    fn history_shows_one_decimal_grams_and_two_decimal_litres() {
+        let i = Intake::new(
+            day("2026-10-12"),
+            parse_macro_tenth_g("protein_tenth_g", "12,5").unwrap(),
+            parse_macro_tenth_g("carbs_tenth_g", "200.3").unwrap(),
+            parse_macro_tenth_g("fat_tenth_g", "60").unwrap(),
+            parse_water_ml("1,25").unwrap(),
+        )
+        .unwrap();
+        let v = IntakeView::from(&i);
+        assert_eq!(v.protein_g, "12,5");
+        assert_eq!(v.carbs_g, "200,3");
+        assert_eq!(v.fat_g, "60");
+        assert_eq!(v.water.as_deref(), Some("1,25"));
+        let fat_only = Intake::new(
+            day("2026-10-12"),
+            0,
+            0,
+            parse_macro_tenth_g("fat_tenth_g", "0,5").unwrap(),
+            None,
+        )
+        .unwrap();
+        let fat_view = IntakeView::from(&fat_only);
+        assert_eq!(fat_view.fat_g, "0,5");
+        assert_eq!(fat_view.energy_kcal, 5);
+        let sip = Intake::new(day("2026-10-12"), 0, 0, 0, parse_water_ml("0,05").unwrap()).unwrap();
+        assert_eq!(IntakeView::from(&sip).water.as_deref(), Some("0,05"));
     }
 
     #[test]
-    fn refused_weights_have_readable_messages() {
+    fn whole_grams_and_whole_litres_keep_kcal() {
+        let i = Intake::new(
+            day("2026-10-12"),
+            parse_macro_tenth_g("protein_tenth_g", "150").unwrap(),
+            parse_macro_tenth_g("carbs_tenth_g", "0").unwrap(),
+            parse_macro_tenth_g("fat_tenth_g", "0").unwrap(),
+            parse_water_ml("2").unwrap(),
+        )
+        .unwrap();
+        let v = IntakeView::from(&i);
+        assert_eq!(v.protein_g, "150");
+        assert_eq!(v.carbs_g, "0");
+        assert_eq!(v.fat_g, "0");
+        assert_eq!(v.water.as_deref(), Some("2"));
+        assert_eq!(v.energy_kcal, 600);
+    }
+
+    #[test]
+    fn weight_that_is_not_a_number_shows_a_french_example() {
         let abc = validation_message(&parse_weight_tenth_kg("abc").unwrap_err());
-        assert!(abc.contains("not a weight"), "{abc}");
-        let big = validation_message(&parse_weight_tenth_kg("300").unwrap_err());
-        assert_eq!(big, "The weight must be between 30,0 and 250,0 kg.");
+        assert_eq!(
+            abc,
+            "\"abc\" n'est pas un poids : indiquez des kilogrammes avec au plus une décimale, par exemple 82,6."
+        );
+    }
+
+    #[test]
+    fn empty_protein_is_required_in_french() {
+        let empty = validation_message(&parse_macro_tenth_g("protein_tenth_g", "").unwrap_err());
+        assert_eq!(empty, "Les protéines sont obligatoires.");
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("carbs_tenth_g", "").unwrap_err()),
+            "Les glucides sont obligatoires."
+        );
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("fat_tenth_g", "").unwrap_err()),
+            "Les lipides sont obligatoires."
+        );
+    }
+
+    #[test]
+    fn out_of_bounds_values_and_future_dates_are_refused_in_french() {
+        assert_eq!(
+            validation_message(&parse_weight_tenth_kg("300").unwrap_err()),
+            "Le poids doit être compris entre 30,0 et 250,0 kg."
+        );
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("carbs_tenth_g", "1001").unwrap_err()),
+            "Les glucides doivent rester entre 0 et 1000 g."
+        );
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("protein_tenth_g", "1001").unwrap_err()),
+            "Les protéines doivent rester entre 0 et 1000 g."
+        );
+        assert_eq!(
+            validation_message(&parse_water_ml("11").unwrap_err()),
+            "L'eau doit être comprise entre 0 et 10,0 L."
+        );
+        let future = check_not_future(day("2026-10-14"), day("2026-10-13")).unwrap_err();
+        assert_eq!(
+            validation_message(&future),
+            "mer. 14 oct. est dans le futur, choisis aujourd'hui ou avant."
+        );
+        let invalid = Day::parse("2026-13-01").unwrap_err();
+        assert_eq!(
+            validation_message(&invalid),
+            "La date \"2026-13-01\" n'est pas valide."
+        );
+    }
+
+    #[test]
+    fn malformed_macros_and_water_name_the_field_in_french() {
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("fat_tenth_g", "12,55").unwrap_err()),
+            "\"12,55\" n'est pas valide pour les lipides : indiquez des grammes avec au plus une décimale, par exemple 12,5."
+        );
+        assert_eq!(
+            validation_message(&parse_macro_tenth_g("carbs_tenth_g", "abc").unwrap_err()),
+            "\"abc\" n'est pas valide pour les glucides : indiquez des grammes avec au plus une décimale, par exemple 12,5."
+        );
+        assert_eq!(
+            validation_message(&parse_water_ml("1,255").unwrap_err()),
+            "\"1,255\" n'est pas une quantité d'eau : indiquez des litres avec au plus deux décimales, par exemple 1,25, ou laissez le champ vide."
+        );
+    }
+
+    #[test]
+    fn database_errors_are_shown_in_french() {
+        assert_eq!(
+            store_message(&StoreError::UnsupportedSchemaVersion(7)),
+            "La base de données utilise une version inconnue (7)."
+        );
+        assert_eq!(
+            store_message(&StoreError::InvalidRow(ValidationError::InvalidDate(
+                "x".into()
+            ))),
+            "La base de données contient une ligne invalide."
+        );
+        assert_eq!(
+            database_unavailable_message(),
+            "La base de données est indisponible, redémarrez l'application."
+        );
+    }
+
+    #[test]
+    fn a_duplicated_weigh_in_date_is_explained_in_french() {
+        assert_eq!(
+            duplicate_date_message(),
+            "Deux pesées portent la même date."
+        );
+    }
+
+    fn macros(d: &str, protein: u16, carbs: u16, fat: u16, water: Option<u16>) -> Intake {
+        Intake::new(day(d), protein, carbs, fat, water).unwrap()
+    }
+
+    #[test]
+    fn kcal_line_prefers_today_then_yesterday() {
+        let yesterday = macros("2026-10-25", 1650, 1800, 650, Some(2150));
+        assert_eq!(energy_kcal(&yesterday), 1965);
+        let today = macros("2026-10-26", 1000, 0, 0, None);
+        assert_eq!(energy_kcal(&today), 400);
+        let hier = home("2026-10-26", 15, &[], &[yesterday], Some(7850));
+        assert_eq!(hier.primary, "78,5");
+        assert_eq!(
+            hier.subtitle,
+            "Hier · 1\u{202f}965 kcal · moyenne à jeun sur 7 jours"
+        );
+        let auj = home(
+            "2026-10-26",
+            15,
+            &[],
+            &[macros("2026-10-25", 1650, 1800, 650, Some(2150)), today],
+            Some(7850),
+        );
+        assert_eq!(
+            auj.subtitle,
+            "Aujourd'hui · 400 kcal · moyenne à jeun sur 7 jours"
+        );
+        let none = home("2026-10-26", 15, &[], &[], Some(7850));
+        assert_eq!(none.subtitle, "Moyenne à jeun sur 7 jours");
+    }
+
+    #[test]
+    fn empty_screen_greets_and_invites_an_entry() {
+        let evening = home("2026-10-26", 20, &[], &[], None);
+        assert_eq!(evening.primary, "Bonsoir.");
+        assert!(!evening.is_trend);
+        assert_eq!(evening.trend, None);
+        assert_eq!(
+            evening.subtitle,
+            "Pas encore de saisie. La tendance apparaîtra après 4 pesées à jeun."
+        );
+        assert_eq!(home("2026-10-26", 3, &[], &[], None).primary, "Bonsoir.");
+        assert_eq!(home("2026-10-26", 9, &[], &[], None).primary, "Bonjour.");
+        assert_eq!(greeting(4), "Bonsoir.");
+        assert_eq!(greeting(5), "Bonjour.");
+        assert_eq!(greeting(17), "Bonjour.");
+        assert_eq!(greeting(18), "Bonsoir.");
+    }
+
+    #[test]
+    fn a_saved_weigh_in_drops_the_no_entry_subtitle() {
+        let saved = home("2026-10-26", 10, &[weigh("2026-10-26", 826)], &[], None);
+        assert_eq!(saved.primary, "");
+        assert!(!saved.is_trend);
+        assert_eq!(
+            saved.subtitle,
+            "La tendance apparaîtra après 4 pesées à jeun."
+        );
+    }
+
+    #[test]
+    fn a_trend_without_intake_names_the_fasted_average() {
+        let ws = [
+            weigh("2026-10-23", 820),
+            weigh("2026-10-24", 826),
+            weigh("2026-10-25", 830),
+            weigh("2026-10-26", 826),
+        ];
+        let today = day("2026-10-26");
+        let trend = trend(&ws, today).unwrap();
+        assert!(trend.is_some());
+        let saved = home("2026-10-26", 10, &ws, &[], trend);
+        assert!(saved.is_trend);
+        assert_eq!(saved.subtitle, "Moyenne à jeun sur 7 jours");
+    }
+
+    #[test]
+    fn at_14h_the_screen_dates_the_intake_yesterday_and_shows_the_flag() {
+        let today = day("2026-10-26");
+        let proposed = proposed_intake_date(
+            today,
+            Time::from_hms(14, 0, 0).unwrap(),
+            SwitchHour::default(),
+            IntakePresence {
+                yesterday: false,
+                today: true,
+            },
+        );
+        let l = Listing::new(
+            today,
+            14,
+            today,
+            proposed,
+            &[],
+            &[macros("2026-10-26", 1650, 1800, 650, Some(2150))],
+            None,
+        );
+        assert_eq!(proposed.date.to_string(), "2026-10-25");
+        assert!(l.forgotten_yesterday);
+        assert_eq!(l.weigh_in_when, "Aujourd'hui");
+        assert_eq!(l.weigh_in_label, "lun. 26 oct.");
+        assert_eq!(l.intake_date, "2026-10-25");
+        assert_eq!(l.intake_when, "Hier");
+        assert_eq!(l.intake_label, "dim. 25 oct.");
+        assert!(l.subtitle.starts_with("Aujourd'hui · 1\u{202f}965 kcal"));
+    }
+
+    #[test]
+    fn a_filled_yesterday_drops_the_flag_and_proposes_today() {
+        let today = day("2026-10-26");
+        let proposed = proposed_intake_date(
+            today,
+            Time::from_hms(14, 0, 0).unwrap(),
+            SwitchHour::default(),
+            IntakePresence {
+                yesterday: true,
+                today: true,
+            },
+        );
+        let l = Listing::new(today, 14, today, proposed, &[], &[], None);
+        assert!(!proposed.forgotten_yesterday);
+        assert_eq!(l.intake_date, "2026-10-26");
+        assert_eq!(l.intake_when, "Aujourd'hui");
+        assert!(!l.forgotten_yesterday);
+    }
+
+    #[test]
+    fn history_line_shows_kcal_and_water_without_macro_grams() {
+        let intake = macros("2026-10-25", 1650, 1800, 650, Some(2150));
+        let l = home(
+            "2026-10-26",
+            10,
+            &[weigh("2026-10-25", 784)],
+            &[intake],
+            None,
+        );
+        let row = l.days.iter().find(|d| d.date == "2026-10-25").unwrap();
+        assert_eq!(row.weight_label.as_deref(), Some("78,4 kg"));
+        assert_eq!(row.label, "dim. 25 oct.");
+        let detail = row.detail.as_deref().unwrap();
+        assert_eq!(detail, "1\u{202f}965 kcal · eau 2,15 L");
+        assert!(!detail.contains("165"), "{detail}");
+        assert!(!detail.contains(" g"), "{detail}");
+        assert_eq!(row.intake.as_ref().unwrap().protein_g, "165");
+        assert!(!row.alert);
+    }
+
+    #[test]
+    fn a_three_kilogram_gap_is_marked_on_that_day_only() {
+        let mut ws: Vec<_> = (12..=15)
+            .map(|d| weigh(&format!("2026-10-{d}"), 790))
+            .collect();
+        ws.push(weigh("2026-10-16", 820));
+        ws.push(weigh_at("2026-10-17", 900, false));
+        let l = home("2026-10-26", 10, &ws, &[], None);
+        let marked = l.days.iter().find(|d| d.date == "2026-10-16").unwrap();
+        assert!(marked.alert);
+        assert_eq!(marked.weight_label.as_deref(), Some("82,0 kg"));
+        assert_eq!(marked.detail, None);
+        let late = l.days.iter().find(|d| d.date == "2026-10-17").unwrap();
+        assert!(!late.alert);
+        assert_eq!(late.detail.as_deref(), Some("pas à jeun"));
+        let calm = l.days.iter().find(|d| d.date == "2026-10-15").unwrap();
+        assert!(!calm.alert);
+    }
+
+    /// Points and the displayed trend for each day of a window ending at `today`.
+    /// The trend is the one `dietlock_core` already computes.
+    #[test]
+    fn curve_lists_each_day_with_its_weigh_in_and_its_trend() {
+        let today = day("2026-10-12");
+        // Four 79,0 kg weigh-ins make a trend of 79,0 on 28 Sept, the first day of a 15-day window.
+        // The October cluster is the documented 80,3 case and sits inside 6–12 Oct, so it does not
+        // change 28 Sept. 27 Sept has only three of those weigh-ins and therefore no trend:
+        // the variation is over 14 days, not 15.
+        let ws = vec![
+            weigh("2026-09-25", 790),
+            weigh("2026-09-26", 790),
+            weigh("2026-09-27", 790),
+            weigh("2026-09-28", 790),
+            weigh("2026-10-09", 800),
+            weigh("2026-10-10", 810),
+            weigh("2026-10-11", 795),
+            weigh("2026-10-12", 805),
+        ];
+        let curve = WeightCurve::build(today, &ws, 15).unwrap();
+        assert_eq!(curve.days.len(), 15);
+        assert_eq!(curve.days[0].date, "2026-09-28");
+        assert_eq!(curve.days[0].weigh_tenth_kg, Some(790));
+        assert_eq!(curve.days[0].trend_tenth_kg, Some(790));
+        assert_eq!(curve.days[14].date, "2026-10-12");
+        assert_eq!(curve.days[14].weigh_tenth_kg, Some(805));
+        assert_eq!(curve.days[14].trend_tenth_kg, Some(803));
+        let october_11 = curve.days.iter().find(|d| d.date == "2026-10-11").unwrap();
+        assert_eq!(october_11.weigh_tenth_kg, Some(795));
+        assert_eq!(october_11.trend_tenth_kg, None);
+        assert!(curve.days.iter().any(|d| d.weigh_tenth_kg.is_none()));
+        for view in &curve.days {
+            let date = day(&view.date);
+            let expected = trend(&ws, date)
+                .unwrap()
+                .map(|h| display_tenth_kg(i32::try_from(h).unwrap()));
+            assert_eq!(view.trend_tenth_kg, expected, "{}", view.date);
+            let weigh = ws
+                .iter()
+                .find(|w| w.date() == date)
+                .map(|w| w.weight_tenth_kg());
+            assert_eq!(view.weigh_tenth_kg, weigh, "{}", view.date);
+        }
+        assert_eq!(curve.days[0].label, "28 sept.");
+        assert_eq!(curve.days[14].label, "12 oct.");
+        assert_eq!(curve.variation_tenth_kg, Some(13));
+        assert_eq!(curve.variation_tenth_kg, variation(&ws, today, 14).unwrap());
+
+        let screen = WeightScreen::new(today, &ws).unwrap();
+        assert_eq!(screen.days.len(), 30);
+        assert_eq!(screen.days.last().unwrap().trend_tenth_kg, Some(803));
+        assert_eq!(screen.trend.as_deref(), Some("80,3"));
+        assert_eq!(screen.short_variation, Some(13));
+        assert_eq!(screen.long_variation, None);
+        assert!(screen.notice.is_none());
+        let earlier = screen.days.iter().find(|d| d.date == "2026-09-25").unwrap();
+        assert_eq!(earlier.weigh_tenth_kg, Some(790));
+    }
+
+    #[test]
+    fn fewer_than_four_fasted_weigh_ins_keep_the_points_and_drop_the_curve() {
+        let today = day("2026-11-03");
+        let ws = vec![
+            weigh("2026-11-01", 780),
+            weigh("2026-11-02", 790),
+            weigh_at("2026-11-03", 800, false),
+        ];
+        let curve = WeightCurve::build(today, &ws, 15).unwrap();
+        assert!(curve.days.iter().all(|d| d.trend_tenth_kg.is_none()));
+        let points: Vec<_> = curve
+            .days
+            .iter()
+            .filter(|d| d.weigh_tenth_kg.is_some())
+            .collect();
+        assert_eq!(points.len(), 3);
+        assert_eq!(points[2].date, "2026-11-03");
+        assert_eq!(points[2].weigh_tenth_kg, Some(800));
+        assert_eq!(curve.variation_tenth_kg, None);
+    }
+
+    #[test]
+    fn one_weigh_in_uses_the_exact_note_and_none_invites() {
+        let today = day("2026-11-03");
+        let one = WeightScreen::new(today, &[weigh("2026-11-03", 784)]).unwrap();
+        let CurveNotice::Single {
+            title,
+            note,
+            weight,
+            today: morning,
+        } = one.notice.unwrap()
+        else {
+            panic!("expected the single-weigh-in notice");
+        };
+        assert_eq!(
+            format!("{title} {note}"),
+            "Une pesée pour l'instant. La tendance se trace dès 4 pesées à jeun sur 7 jours. La prochaine, demain matin."
+        );
+        assert_eq!(weight, "78,4");
+        assert!(morning);
+        assert_eq!(one.days.len(), 30);
+        assert!(one.trend.is_none());
+        assert_eq!(
+            one.days
+                .iter()
+                .filter(|d| d.weigh_tenth_kg.is_some())
+                .count(),
+            1
+        );
+
+        let none = WeightScreen::new(today, &[]).unwrap();
+        let CurveNotice::Empty {
+            headline,
+            chart_title,
+            chart_note,
+            ..
+        } = none.notice.unwrap()
+        else {
+            panic!("expected the empty notice");
+        };
+        assert_eq!(headline, "Pas encore de courbe.");
+        assert_eq!(chart_title, "Ta courbe se dessinera ici.");
+        assert!(!chart_note.is_empty());
+        assert!(none.days.iter().all(|d| d.weigh_tenth_kg.is_none()));
+        assert!(none.trend.is_none());
+    }
+
+    #[test]
+    fn an_unknown_field_is_refused_in_french() {
+        let msg = validation_message(&ValidationError::OutOfRange {
+            field: "unknown",
+            value: 1,
+            min: 0,
+            max: 2,
+        });
+        assert!(msg.starts_with("La saisie n'est pas acceptée ("), "{msg}");
+        assert!(msg.contains("unknown"), "{msg}");
+        assert!(msg.ends_with(")."), "{msg}");
     }
 }

@@ -23,29 +23,29 @@ A day receives two independent inputs, and no existing data is replaced without 
 
 - **S1 · Two independent inputs.** The Weigh-in and the Intake are saved separately. Either can exist without the other.
 - **S2 · Uniqueness.** A date holds at most one Weigh-in and one Intake.
-- **S3 · Confirmed replacement.** Entering a Weigh-in or an Intake on a date that already has one requires confirmation. The old value is shown next to the new one.
+- **S3 · Confirmed replacement.** Replacing a Weigh-in, the Macros, or water that was already entered requires confirmation. The old value is shown next to the new one. Submitting the same value writes nothing and asks nothing. Water added to an Intake that has none is written without confirmation and leaves the Macros in place. Macros left blank do not replace stored Macros.
 - **S4 · Complete macros.** Protein, carbohydrate and fat are required together. Water is optional.
 - **S5 · No pre-fill.** No field is pre-filled. The values of the last Intake appear greyed out in empty fields, as a hint only. An empty field is never saved (S4).
-- **S6 · Formats.** Weight in kg with one decimal. Macros in whole grams. Water in litres with one decimal. Comma and point are both accepted as decimal separator.
+- **S6 · Formats.** Weight in kg with one decimal. Macros in grams with at most one decimal. Water in litres with at most two decimals. Comma and point are both accepted as decimal separator.
 - **S7 · Valid ranges.** Weight from 30 to 250 kg. Protein, carbohydrate and fat from 0 to 1,000 g each. Water from 0 to 10 L. An out-of-range value is refused with a message stating the expected range.
-- **S8 · Computed energy.** Energy = 4 × protein + 4 × carbohydrate + 9 × fat. It is never entered.
+- **S8 · Computed energy.** Energy = 4 × protein + 4 × carbohydrate + 9 × fat, rounded half away from zero to a whole kcal. It is never entered.
 - **S9 · Weigh-in conditions.** The "fasted in the morning" flag is checked by default.
 - **S10 · Deletion.** A Weigh-in or an Intake can be deleted after confirmation. Deleting a Weigh-in triggers the recalculation in T5.
 
 ## Dates
 
-The Weigh-in is always proposed for today's date. The Intake rolls over to the previous day before 4 a.m.
+The Weigh-in is always proposed for today's date. The Intake rolls over to the previous day before 4 a.m., and from noon when yesterday has no Intake.
 
 - **D1 · Weigh-in date.** The proposed date is always today.
-- **D2 · Switch hour.** Before the switch hour, the proposed date for an Intake is the previous day. After it, the proposed date is today, except in case D8.
-- **D3 · Adjustable switch hour.** The switch hour defaults to 4 a.m. and can be changed in settings. It applies only to Intakes.
+- **D2 · Switch hour.** Before the switch hour, the proposed date for an Intake is the previous day. From the switch hour until noon, the proposed date is today, except in case D8. From noon, if yesterday has no Intake, the proposed date is yesterday; if yesterday already has an Intake, it is today.
+- **D3 · Adjustable switch hour.** The switch hour defaults to 4 a.m. and can be changed in settings. It applies only to Intakes, and only before noon. Changing it never moves the noon boundary of D8.
 - **D4 · Editable date.** The proposed date can always be changed before saving.
 - **D5 · No future.** No input is possible for a date after today.
 - **D6 · Catch-up.** Any past date can be entered or corrected, subject to S3.
 - **D7 · Switch hour change.** Changing the switch hour only changes the proposed date for future inputs. Existing inputs are never moved.
-- **D8 · Forgotten yesterday.** Between the switch hour and noon, if yesterday has no Intake and today does not either, the proposed date for the Intake is yesterday. The proposed day's name is highlighted. After noon, D2 applies.
+- **D8 · Forgotten yesterday.** Between the switch hour and noon, if yesterday has no Intake and today does not either, the proposed date for the Intake is yesterday. From noon until midnight, if yesterday has no Intake, the proposed date is yesterday, whether or not today has an Intake; if yesterday already has an Intake, the proposed date is today. The proposed day's name is highlighted whenever this rule chooses yesterday.
 
-Example: at 0:30 on Tuesday, the Intake is proposed for Monday. At 7:00 on Tuesday, the Weigh-in is proposed for Tuesday.
+Example: at 0:30 on Tuesday, the Intake is proposed for Monday. At 7:00 on Tuesday, with no Intake on Monday or Tuesday, the Intake is proposed for Monday, and the Weigh-in is proposed for Tuesday. At 14:00 on Tuesday, with no Intake on Monday, the Intake is proposed for Monday even if Tuesday already has one; if Monday already has one, it is proposed for Tuesday.
 
 ## Trend
 
