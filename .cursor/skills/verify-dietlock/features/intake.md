@@ -30,7 +30,8 @@ Preconditions:
 
 ## Gotchas
 
-- Click `#save`. An empty weight field on the same card does not create a weigh-in.
+- Click `#save`. An empty weight field on the same card does not create a weigh-in. A weight equal to the stored one does not either.
+- On a day that already has macros, water typed with the macro fields empty updates the water and keeps the macros. There is no question when that day had no water.
 - On an empty store the proposed intake date is yesterday all day. Before 04:00 the forgotten mark is hidden. From 04:00, including after noon, the chip shows `hier oublié` until yesterday has an intake.
 - The history no longer prints `P 150 g, G 250 g, L 70 g`. Grams stay in the form. The row shows kcal and, when typed, water.
 - `12,5` is a valid fat amount. The refusal for a word is a French sentence that contains `lipides`.

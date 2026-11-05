@@ -5,9 +5,10 @@ use std::sync::Mutex;
 
 use chrono::Timelike;
 use dietlock_core::{
-    Day, Intake, IntakePresence, SwitchHour, TREND_WINDOW_DAYS, WeighIn, check_not_future,
-    parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
-    proposed_intake_date as core_proposed_intake_date, proposed_weigh_in_date, trend,
+    Day, Intake, IntakePresence, SaveDecision, SwitchHour, TREND_WINDOW_DAYS, WeighIn,
+    check_not_future, decide_intake, decide_water, decide_weigh_in, parse_macro_tenth_g,
+    parse_water_ml, parse_weight_tenth_kg, proposed_intake_date as core_proposed_intake_date,
+    proposed_weigh_in_date, trend,
 };
 use dietlock_store::{SaveError, Store};
 use tauri::State;
@@ -39,9 +40,8 @@ fn lock(store: &Mutex<Store>) -> Result<std::sync::MutexGuard<'_, Store>, String
         .map_err(|_| view::database_unavailable_message().to_owned())
 }
 
-/// Saves a weigh-in typed by the user. With `replace` false and the date
-/// already filled, nothing is written and the previous weigh-in is returned
-/// so the UI can ask for confirmation (S3).
+/// Saves a weigh-in typed by the user. The same value writes nothing.
+/// A different value on a filled date asks first (S3).
 #[tauri::command]
 pub fn save_weigh_in(
     store: State<'_, Mutex<Store>>,
@@ -50,21 +50,50 @@ pub fn save_weigh_in(
     date: String,
     replace: bool,
 ) -> Result<SaveOutcome, String> {
-    let date = Day::parse(&date).map_err(|e| view::validation_message(&e))?;
-    let date = check_not_future(date, today()?).map_err(|e| view::validation_message(&e))?;
-    let weight = parse_weight_tenth_kg(&weight_text).map_err(|e| view::validation_message(&e))?;
-    let w = WeighIn::new(date, weight, fasted).map_err(|e| view::validation_message(&e))?;
-    match lock(&store)?.save_weigh_in(&w, replace) {
-        Ok(()) => Ok(SaveOutcome::Saved),
-        Err(SaveError::AlreadyFilled(old)) => Ok(SaveOutcome::AlreadyFilled {
-            old: WeighInView::from(&old),
-        }),
-        Err(SaveError::Store(e)) => Err(view::store_message(&e)),
+    let msg = |e: dietlock_core::ValidationError| view::validation_message(&e);
+    let date = Day::parse(&date).map_err(msg)?;
+    let date = check_not_future(date, today()?).map_err(msg)?;
+    let weight = parse_weight_tenth_kg(&weight_text).map_err(msg)?;
+    let next = WeighIn::new(date, weight, fasted).map_err(msg)?;
+    let mut store = lock(&store)?;
+    let existing = store
+        .get_weigh_in(date)
+        .map_err(|e| view::store_message(&e))?;
+    apply_weigh(
+        &mut store,
+        existing,
+        decide_weigh_in(existing, next),
+        replace,
+    )
+}
+
+fn apply_weigh(
+    store: &mut Store,
+    existing: Option<WeighIn>,
+    decision: SaveDecision<WeighIn>,
+    replace: bool,
+) -> Result<SaveOutcome, String> {
+    match decision {
+        SaveDecision::Unchanged => Ok(SaveOutcome::Unchanged),
+        SaveDecision::Write { confirm: true, .. } if !replace => {
+            let old = existing.expect("a weigh-in confirmation only happens when a row is stored");
+            Ok(SaveOutcome::AlreadyFilled {
+                old: WeighInView::from(&old),
+            })
+        }
+        SaveDecision::Write { value, .. } => match store.save_weigh_in(&value, true) {
+            Ok(()) => Ok(SaveOutcome::Saved),
+            Err(SaveError::AlreadyFilled(old)) => Ok(SaveOutcome::AlreadyFilled {
+                old: WeighInView::from(&old),
+            }),
+            Err(SaveError::Store(e)) => Err(view::store_message(&e)),
+        },
     }
 }
 
-/// Saves the macros typed by the user; an empty water text saves no water.
-/// Same confirmation pattern as [`save_weigh_in`].
+/// Saves the intake typed by the user. Blank macros with water update only
+/// the water of an existing intake (S3, S4). An empty water text on a full
+/// intake saves no water.
 #[tauri::command]
 pub fn save_intake(
     store: State<'_, Mutex<Store>>,
@@ -78,17 +107,54 @@ pub fn save_intake(
     let msg = |e: dietlock_core::ValidationError| view::validation_message(&e);
     let date = Day::parse(&date).map_err(msg)?;
     let date = check_not_future(date, today()?).map_err(msg)?;
-    let protein = parse_macro_tenth_g("protein_tenth_g", &protein_text).map_err(msg)?;
-    let carbs = parse_macro_tenth_g("carbs_tenth_g", &carbs_text).map_err(msg)?;
-    let fat = parse_macro_tenth_g("fat_tenth_g", &fat_text).map_err(msg)?;
-    let water = parse_water_ml(&water_text).map_err(msg)?;
-    let i = Intake::new(date, protein, carbs, fat, water).map_err(msg)?;
-    match lock(&store)?.save_intake(&i, replace) {
-        Ok(()) => Ok(IntakeSaveOutcome::Saved),
-        Err(SaveError::AlreadyFilled(old)) => Ok(IntakeSaveOutcome::AlreadyFilled {
-            old: IntakeView::from(&old),
-        }),
-        Err(SaveError::Store(e)) => Err(view::store_message(&e)),
+    let mut store = lock(&store)?;
+    let existing = store
+        .get_intake(date)
+        .map_err(|e| view::store_message(&e))?;
+    let blank = |text: &str| text.trim().is_empty();
+    let decision = if blank(&protein_text) && blank(&carbs_text) && blank(&fat_text) {
+        match parse_water_ml(&water_text).map_err(msg)? {
+            None => return Ok(IntakeSaveOutcome::Unchanged),
+            Some(ml) => {
+                let Some(old) = existing else {
+                    return Err(msg(parse_macro_tenth_g("protein_tenth_g", "")
+                        .expect_err("an empty macro is not a number")));
+                };
+                decide_water(old, ml)
+            }
+        }
+    } else {
+        let protein = parse_macro_tenth_g("protein_tenth_g", &protein_text).map_err(msg)?;
+        let carbs = parse_macro_tenth_g("carbs_tenth_g", &carbs_text).map_err(msg)?;
+        let fat = parse_macro_tenth_g("fat_tenth_g", &fat_text).map_err(msg)?;
+        let water = parse_water_ml(&water_text).map_err(msg)?;
+        let next = Intake::new(date, protein, carbs, fat, water).map_err(msg)?;
+        decide_intake(existing, next)
+    };
+    apply_intake(&mut store, existing, decision, replace)
+}
+
+fn apply_intake(
+    store: &mut Store,
+    existing: Option<Intake>,
+    decision: SaveDecision<Intake>,
+    replace: bool,
+) -> Result<IntakeSaveOutcome, String> {
+    match decision {
+        SaveDecision::Unchanged => Ok(IntakeSaveOutcome::Unchanged),
+        SaveDecision::Write { confirm: true, .. } if !replace => {
+            let old = existing.expect("an intake confirmation only happens when a row is stored");
+            Ok(IntakeSaveOutcome::AlreadyFilled {
+                old: IntakeView::from(&old),
+            })
+        }
+        SaveDecision::Write { value, .. } => match store.save_intake(&value, true) {
+            Ok(()) => Ok(IntakeSaveOutcome::Saved),
+            Err(SaveError::AlreadyFilled(old)) => Ok(IntakeSaveOutcome::AlreadyFilled {
+                old: IntakeView::from(&old),
+            }),
+            Err(SaveError::Store(e)) => Err(view::store_message(&e)),
+        },
     }
 }
 

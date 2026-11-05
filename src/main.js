@@ -15,7 +15,7 @@ import {
 } from "./calendar.js";
 import { renderChart } from "./chart.js";
 import { savesOnEnter, screenShortcut } from "./keys.js";
-import { saveBlocks } from "./save.js";
+import { blockStatus, intakeConfirmText, saveBlocks } from "./save.js";
 
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
@@ -399,14 +399,21 @@ function showBlockError(block, message) {
   }
 }
 
-function intakeConfirmText(entry, old) {
-  const oldWater = old.water ? `, eau ${old.water} L` : "";
-  const nextWater = entry.waterText.trim() ? `, eau ${entry.waterText.trim()} L` : "";
-  return (
-    `Le ${entry.label} a déjà une alimentation : ${groupKcal(old.energyKcal)} kcal ` +
-    `(P ${old.proteinG} g, G ${old.carbsG} g, L ${old.fatG} g${oldWater}). ` +
-    `La remplacer par P ${entry.proteinText} g, G ${entry.carbsText} g, L ${entry.fatText} g${nextWater} ?`
-  );
+function intakeQuestion(entry, old) {
+  return intakeConfirmText({
+    label: entry.label,
+    proteinText: entry.proteinText,
+    carbsText: entry.carbsText,
+    fatText: entry.fatText,
+    waterText: entry.waterText,
+    old: {
+      energy: groupKcal(old.energyKcal),
+      proteinG: old.proteinG,
+      carbsG: old.carbsG,
+      fatG: old.fatG,
+      water: old.water,
+    },
+  });
 }
 
 async function commitWeigh(entry, replace) {
@@ -417,7 +424,8 @@ async function commitWeigh(entry, replace) {
       date: entry.date,
       replace,
     });
-    if (outcome.status === "alreadyFilled") {
+    const status = blockStatus(outcome.status);
+    if (status === "confirm") {
       queue.push({
         kind: "weigh",
         entry,
@@ -425,9 +433,8 @@ async function commitWeigh(entry, replace) {
           `Le ${entry.label} a déjà une pesée : ${outcome.old.weight} kg. ` +
           `La remplacer par ${entry.weightText} kg ?`,
       });
-      return "confirm";
     }
-    return "saved";
+    return status;
   } catch (e) {
     showBlockError("weigh", errorText(e));
     return "error";
@@ -444,15 +451,15 @@ async function commitIntake(entry, replace) {
       date: entry.date,
       replace,
     });
-    if (outcome.status === "alreadyFilled") {
+    const status = blockStatus(outcome.status);
+    if (status === "confirm") {
       queue.push({
         kind: "intake",
         entry,
-        text: intakeConfirmText(entry, outcome.old),
+        text: intakeQuestion(entry, outcome.old),
       });
-      return "confirm";
     }
-    return "saved";
+    return status;
   } catch (e) {
     showBlockError("intake", errorText(e));
     return "error";
