@@ -434,7 +434,7 @@ impl Listing {
         let (primary, is_trend, subtitle) = if let Some(weight) = trend.clone() {
             let subtitle = match phrase {
                 Some(kcal) => format!("{kcal} · moyenne à jeun sur 7 jours"),
-                None => "Pas encore de saisie · moyenne à jeun sur 7 jours".to_owned(),
+                None => "Moyenne à jeun sur 7 jours".to_owned(),
             };
             (weight, true, subtitle)
         } else if !has_data {
@@ -446,9 +446,7 @@ impl Listing {
         } else {
             let subtitle = match phrase {
                 Some(kcal) => format!("{kcal}. La tendance apparaîtra après 4 pesées à jeun."),
-                None => {
-                    "Pas encore de saisie. La tendance apparaîtra après 4 pesées à jeun.".to_owned()
-                }
+                None => "La tendance apparaîtra après 4 pesées à jeun.".to_owned(),
             };
             (String::new(), false, subtitle)
         };
@@ -826,10 +824,7 @@ mod tests {
             "Aujourd'hui · 400 kcal · moyenne à jeun sur 7 jours"
         );
         let none = home("2026-10-26", 15, &[], &[], Some(7850));
-        assert_eq!(
-            none.subtitle,
-            "Pas encore de saisie · moyenne à jeun sur 7 jours"
-        );
+        assert_eq!(none.subtitle, "Moyenne à jeun sur 7 jours");
     }
 
     #[test]
@@ -848,6 +843,33 @@ mod tests {
         assert_eq!(greeting(5), "Bonjour.");
         assert_eq!(greeting(17), "Bonjour.");
         assert_eq!(greeting(18), "Bonsoir.");
+    }
+
+    #[test]
+    fn a_saved_weigh_in_drops_the_no_entry_subtitle() {
+        let saved = home("2026-10-26", 10, &[weigh("2026-10-26", 826)], &[], None);
+        assert_eq!(saved.primary, "");
+        assert!(!saved.is_trend);
+        assert_eq!(
+            saved.subtitle,
+            "La tendance apparaîtra après 4 pesées à jeun."
+        );
+    }
+
+    #[test]
+    fn a_trend_without_intake_names_the_fasted_average() {
+        let ws = [
+            weigh("2026-10-23", 820),
+            weigh("2026-10-24", 826),
+            weigh("2026-10-25", 830),
+            weigh("2026-10-26", 826),
+        ];
+        let today = day("2026-10-26");
+        let trend = trend(&ws, today).unwrap();
+        assert!(trend.is_some());
+        let saved = home("2026-10-26", 10, &ws, &[], trend);
+        assert!(saved.is_trend);
+        assert_eq!(saved.subtitle, "Moyenne à jeun sur 7 jours");
     }
 
     #[test]
