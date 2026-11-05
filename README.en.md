@@ -9,7 +9,7 @@ Daily tracking of weight, macros and hydration, with a smoothed weight trend. De
 - Weight trend: mean of the fasted weigh-ins over 7 days, shown once the window holds at least 4.
 - Data stays on your machine (SQLite), no account, no network.
 
-**Status (v0.1.0)**: one screen (trend, entry, 30-day history) that follows light and dark mode. No targets and no chart yet.
+**Status (v0.2.0)**: a home screen (trend, entry, 30 days of weight, energy and water) and a weight curve screen, both following light and dark mode. No targets yet.
 
 ## Install (macOS, Apple Silicon)
 

@@ -568,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "dietlock"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "dietlock-core",
@@ -581,14 +581,14 @@ dependencies = [
 
 [[package]]
 name = "dietlock-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "time",
 ]
 
 [[package]]
 name = "dietlock-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dietlock-core",
  "rusqlite",

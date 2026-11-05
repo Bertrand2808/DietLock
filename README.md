@@ -9,7 +9,7 @@ Suivi quotidien du poids, des macros et de l'hydratation, avec une tendance de p
 - Tendance de poids : moyenne des pesées à jeun sur 7 jours, affichée dès 4 pesées dans la fenêtre.
 - Données stockées uniquement en local (SQLite), sans compte ni réseau.
 
-**État (v0.1.0)** : un écran (tendance, saisie, historique de 30 jours) qui suit le mode clair ou sombre. Pas encore d'objectifs ni de graphique.
+**État (v0.2.0)** : un écran d'accueil (tendance, saisie, 30 jours de poids, d'énergie et d'eau) et un écran de courbe de poids, qui suivent le mode clair ou sombre. Pas encore d'objectifs.
 
 ## Installer (macOS, Apple Silicon)
 

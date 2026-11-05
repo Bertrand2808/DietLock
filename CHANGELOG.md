@@ -4,6 +4,12 @@ All notable changes to DietLock are listed here. Format based on [Keep a Changel
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-05
+
+### Added
+
+- The weight curve has its own screen. The trend dot appears on the fourth fasted weigh-in, and the overlay title bar can be dragged.
+
 ### Changed
 
 - Each entry row's date can be changed before saving. The chip opens a calendar with today, yesterday and past days. A future date is refused in French, named like the history, and what was typed stays. Today is read again when the calendar opens or the window focuses, and that refusal does not save.
@@ -13,6 +19,9 @@ All notable changes to DietLock are listed here. Format based on [Keep a Changel
 - Error messages shown in the app are in French. The core and the store keep their own error text.
 - Macros accept grams with at most one decimal. Water accepts litres with at most two decimals.
 - Energy stays a whole number of kcal and rounds half away from zero.
+- The proposed date of an intake is yesterday from noon when yesterday has no intake (D2, D8).
+- Saving writes a block only when its value changes. An unchanged value writes nothing and asks no confirmation (S3).
+- The empty subtitle disappears once an entry or a trend exists.
 - Opening a v0.1.0 database scales stored macros from grams to tenths of a gram. Water stays in millilitres.
 
 ## [0.1.0] - 2026-10-14
@@ -34,4 +43,5 @@ First release: installable, unsigned macOS app (Apple Silicon, `.app` and `.dmg`
 - Data stored locally in SQLite; saving over an existing day asks for confirmation.
 - Packaging for macOS as `.app` and `.dmg`.
 
+[0.2.0]: https://github.com/Bertrand2808/DietLock/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Bertrand2808/DietLock/releases/tag/v0.1.0
