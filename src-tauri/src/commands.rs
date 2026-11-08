@@ -255,8 +255,29 @@ fn apply_delete(
     block: DeleteBlock,
     confirm: bool,
 ) -> Result<DeleteOutcome, String> {
-    let _ = (store, date, block, confirm);
-    unimplemented!()
+    let fail = |e: &dietlock_store::StoreError| view::store_message(e);
+    let target = match block {
+        DeleteBlock::WeighIn => store
+            .get_weigh_in(date)
+            .map_err(|e| fail(&e))?
+            .map(|w| DeleteTarget::WeighIn(WeighInView::from(&w))),
+        DeleteBlock::Intake => store
+            .get_intake(date)
+            .map_err(|e| fail(&e))?
+            .map(|i| DeleteTarget::Intake(IntakeView::from(&i))),
+    };
+    let Some(target) = target else {
+        return Ok(DeleteOutcome::NothingToDelete);
+    };
+    if !confirm {
+        return Ok(DeleteOutcome::Confirm { target });
+    }
+    match block {
+        DeleteBlock::WeighIn => store.delete_weigh_in(date),
+        DeleteBlock::Intake => store.delete_intake(date),
+    }
+    .map_err(|e| fail(&e))?;
+    Ok(DeleteOutcome::Deleted)
 }
 
 #[cfg(test)]
