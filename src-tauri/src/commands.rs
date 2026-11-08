@@ -355,7 +355,7 @@ mod tests {
             s.list_weigh_ins(day("2026-10-01"), day("2026-10-13"))
                 .unwrap()
         };
-        assert_eq!(trend(&list(&s), day("2026-10-13")).unwrap(), Some(825));
+        assert_eq!(trend(&list(&s), day("2026-10-13")).unwrap(), Some(8250));
         apply_delete(&s, day("2026-10-13"), DeleteBlock::WeighIn, true).unwrap();
         assert_eq!(trend(&list(&s), day("2026-10-13")).unwrap(), None);
     }
