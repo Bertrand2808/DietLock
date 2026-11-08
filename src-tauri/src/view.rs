@@ -127,6 +127,7 @@ pub enum DeleteTarget {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
 pub enum DeleteOutcome {
+    /// The block was removed.
     Deleted,
     /// The block does not exist (any more). Nothing was written.
     NothingToDelete,
