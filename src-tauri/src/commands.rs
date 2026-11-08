@@ -235,7 +235,8 @@ pub fn weight_curve(store: State<'_, Mutex<Store>>) -> Result<WeightScreen, Stri
 }
 
 /// Deletes one block of a day after confirmation (S10). Without `confirm`,
-/// returns the stored block and writes nothing. The trend and the alerts
+/// returns the stored block and writes nothing. A missing block returns
+/// `NothingToDelete` either way. The trend and the alerts
 /// are computed from the stored weigh-ins on every read (T5, A4).
 #[tauri::command]
 pub fn delete_entry(
