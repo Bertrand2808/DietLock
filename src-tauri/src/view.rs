@@ -132,9 +132,7 @@ pub enum DeleteOutcome {
     /// The block does not exist (any more). Nothing was written.
     NothingToDelete,
     /// Not confirmed yet; nothing was written. `target` is what would go.
-    Confirm {
-        target: DeleteTarget,
-    },
+    Confirm { target: DeleteTarget },
 }
 
 /// One day of the history; either entry may be missing.
