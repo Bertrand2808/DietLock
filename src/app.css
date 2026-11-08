@@ -562,6 +562,45 @@ kbd {
 }
 
 .submit:focus-visible,
+#delete-yes {
+  border: 0;
+  background: var(--acc);
+  color: var(--on-acc);
+}
+
+#delete-no {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+}
+
+.day .acts {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.day .del {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--mut);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.day:hover .del,
+.day .del:focus-visible {
+  opacity: 1;
+}
+
+.day .del:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
 .confirm button:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--ring);
