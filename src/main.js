@@ -14,7 +14,7 @@ import {
   shortcutState,
 } from "./calendar.js";
 import { renderChart } from "./chart.js";
-import { deleteQuestion, groupKcal } from "./delete.js";
+import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { savesOnEnter, screenShortcut } from "./keys.js";
 import { blockStatus, intakeConfirmText, saveBlocks } from "./save.js";
 
@@ -518,16 +518,18 @@ async function onDeleteConfirmed() {
   const item = pendingDelete;
   if (!item || busy) return;
   busy = true;
-  try {
-    await invoke("delete_entry", { ...item, confirm: true });
-    hideDeleteConfirm();
-    await refresh();
-  } catch (e) {
-    $("delete-text").textContent = errorText(e);
+  const { deleted, error } = await deleteThenReload(
+    () => invoke("delete_entry", { ...item, confirm: true }),
+    refresh,
+  );
+  if (error) {
+    $("delete-text").textContent = deleteFailureText(deleted, errorText(error));
     $("delete-yes").hidden = true;
-  } finally {
-    busy = false;
+    $("delete-confirm").hidden = false;
+  } else {
+    hideDeleteConfirm();
   }
+  busy = false;
 }
 
 function dayWasSaved(outcome) {

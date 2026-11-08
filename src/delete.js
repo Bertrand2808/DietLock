@@ -13,3 +13,22 @@ export function deleteQuestion(label, target) {
     `(P ${target.proteinG} g, G ${target.carbsG} g, L ${target.fatG} g${water}) ?`
   );
 }
+
+/** Runs the deletion, then the reload, and says which step failed. */
+export async function deleteThenReload(remove, reload) {
+  try {
+    await remove();
+  } catch (error) {
+    return { deleted: false, error };
+  }
+  try {
+    await reload();
+  } catch (error) {
+    return { deleted: true, error };
+  }
+  return { deleted: true, error: null };
+}
+
+export function deleteFailureText(deleted, detail) {
+  return deleted ? `Supprimé, mais la liste n'a pas pu être rechargée : ${detail}` : detail;
+}
