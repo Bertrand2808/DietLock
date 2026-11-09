@@ -8,7 +8,7 @@ Every morning, in under 30 seconds, the user enters today's weight, and yesterda
 
 | Term | Definition |
 | --- | --- |
-| Day | A calendar date. It holds at most one Weigh-in and one Intake. |
+| Day | A calendar date. It holds at most one Weigh-in and one Intake, and any number of Activities. |
 | Weigh-in | The weight entered for a date, in kg, with the flag "fasted in the morning" or not. |
 | Valid weigh-in | A Weigh-in with the "fasted in the morning" flag set. Every saved Weigh-in already respects the range in S7. |
 | Intake | The protein, carbohydrate and fat (in g) and water (in L) entered for a date. |
@@ -16,6 +16,7 @@ Every morning, in under 30 seconds, the user enters today's weight, and yesterda
 | Trend | The smoothed weight, computed from valid weigh-ins. |
 | Deviation | The difference between a Weigh-in and the previous day's Trend. |
 | Switch hour | The hour before which an Intake is attributed to the previous day by default. |
+| Activity | A physical activity done on a date: a type from a fixed list and an optional note. |
 
 ## Input
 
@@ -82,8 +83,20 @@ An Alert triggers when a Weigh-in deviates by 3 kg or more from the previous day
 - **A5 · Typo guard.** Before saving, a Weigh-in that deviates by at least 10 kg from the previous day's Trend requires confirmation (example: 8.26 kg instead of 82.6 kg). Without a Trend, the comparison is made against the last valid Weigh-in. Without any Weigh-in, only S7 applies. This check runs before the Alert: a confirmed Weigh-in can then trigger an Alert.
 - **A6 · Colour.** Red is reserved for Alerts and is used nowhere else.
 
+## Activities
+
+The "＋ Activité" button in the title bar opens one form where the user lists all the Activities of a day and saves them at once. Activities are independent of the Weigh-in and the Intake.
+
+- **AC1 · Types.** The type is one of Marche, Course, Mobilité, Muscu, Vélo, Autre, in that order. Stored keys: `walk`, `run`, `mobility`, `strength`, `bike`, `other`.
+- **AC2 · Note.** The note is optional, trimmed, and at most 200 characters. A blank note is no note.
+- **AC3 · One form, several rows.** The form starts with one empty row. Rows can be added and removed before saving. A row with no type and no note is ignored. One save validates and writes every typed row, all or nothing.
+- **AC4 · Type required.** A row with a note and no type refuses the whole form. A form with no typed row is refused. A refusal writes nothing. Closing the form (Esc or Annuler) saves nothing.
+- **AC5 · Append, no uniqueness.** A Day can hold any number of Activities, including identical ones. Saving adds to the Activities already stored for that date, without confirmation and without replacing. S2 and S3 do not apply. Saving Activities never reads or changes the Weigh-in or the Intake of that date.
+- **AC6 · Date.** The form proposes today and the date can be changed to any past day (D4, D6). D5 applies: a future date is refused. Activities are stored per date and are still there after the application restarts.
+
 ## Out of scope for v1 (do not implement)
 
+- Editing an Activity, duration, calories burned, import of Activities (ticket DEV-104).
 - Weight goals and macro targets.
 - Import from another tracking app.
 - Reminders and notifications.
@@ -91,5 +104,6 @@ An Alert triggers when a Weigh-in deviates by 3 kg or more from the previous day
 
 ## Open points
 
+- [ ] Activities are only recorded (AC1–AC6). No screen lists, edits or deletes them yet. Decide where they appear (history row?) and how a mistaken one is removed.
 - [ ] Verify in use the ranges in S7, the 4-weigh-in threshold (T3) and the 3 kg alert threshold (A2).
 - [ ] The weight-curve note of 1 Nov 2026 says a future kcal trend should use 15 days. E1 follows the accepted story and uses 7 days ending yesterday. Decide later whether the two windows should match.

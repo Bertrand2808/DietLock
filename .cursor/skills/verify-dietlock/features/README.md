@@ -8,7 +8,7 @@ The window has two screens, `Aujourd'hui` and `Poids`. Nothing leaves the window
 
 - Run `dietlock-verify launch` and wait until it prints `ready`.
 - The data dir is the empty store that launch created under `/tmp/dietlock-verify/<run-id>/`. Do not point the app at a real `com.bertrand2808.dietlock` directory.
-- Run `dietlock-verify doctor` and require `doctor PASS` before the first drive. Schema `user_version` is 2.
+- Run `dietlock-verify doctor` and require `doctor PASS` before the first drive. Schema `user_version` is 3.
 - Never drive an instance that this run did not start. Launch refuses a second live instance.
 - UI copy is French, including validation messages.
 - Frontend tests do not open the window: `dietlock-verify frontend-test`. Rust proof is `dietlock-verify cargo-test`.
@@ -51,4 +51,5 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Weigh-in](./weigh-in.md) covers saving today's fasted weight from the entry card.
 - [Intake](./intake.md) covers saving macros and optional water from the same card.
 - [Replace a day](./replace.md) covers the confirmation when that date already has a weigh-in or an intake.
+- [Activities](./activity.md) covers the `＋ Activité` button, the modal form, saving several rows for a date, cancelling, and a restart.
 - [Energy week](./energy-week.md) covers the 7-day kcal mean beside the weight trend, the signed gap, the empty cases, and a restart.

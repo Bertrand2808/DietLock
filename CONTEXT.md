@@ -5,7 +5,7 @@ Daily tracking of body weight, macros and water. It smooths weight into a trend 
 ## Days and entries
 
 **Day**:
-A calendar date. It holds at most one Weigh-in and at most one Intake.
+A calendar date. It holds at most one Weigh-in, at most one Intake, and any number of Activities.
 _Avoid_: Journal entry, log
 
 **Weigh-in**:
@@ -23,6 +23,10 @@ _Avoid_: Meal, food log
 **Macros**:
 The protein, carbohydrate and fat amounts of an Intake, in grams with at most one decimal. They are entered together.
 _Avoid_: Nutrients, nutrition values
+
+**Activity**:
+A physical activity done on a Day: a type (Marche, Course, Mobilité, Muscu, Vélo, Autre) and an optional note. A Day can hold several, saved together from one form. It has no duration and no Energy.
+_Avoid_: Workout, exercise, session, sport
 
 **Energy**:
 The kcal of a Day, derived from its Macros. It is never entered.
@@ -59,6 +63,7 @@ _Avoid_: Cutoff, day boundary
 ## Relationships
 
 - A Day holds at most one Weigh-in and at most one Intake; either can exist without the other.
+- Activities are independent of the Weigh-in and the Intake of their Day. Saving Activities appends; it never replaces.
 - A Trend is derived from Weigh-ins only.
 - An Energy mean is derived from Intakes only. A missing Intake is not a zero.
 - An Energy gap compares two Energy means. A missing previous week is not a zero gap.

@@ -7,6 +7,7 @@ All notable changes to DietLock are listed here. Format based on [Keep a Changel
 ### Added
 
 - The home screen shows, beside the weight trend, the mean energy of the 7 days ending yesterday, how many of those days were entered, and the signed gap with the 7 days before. A day without an intake is skipped. An intake of 0 kcal counts. No intake in the window shows a sentence instead of 0. No intake in the previous week says there is no comparison (E1–E6).
+- A "＋ Activité" button in the title bar opens a form to record all the activities of a day at once: a type (Marche, Course, Mobilité, Muscu, Vélo, Autre) and an optional note per row, for today or a past day. Saving adds to the day's activities and leaves the weigh-in and the intake alone. The database moves to schema 3 (AC1–AC6).
 
 ### Changed
 

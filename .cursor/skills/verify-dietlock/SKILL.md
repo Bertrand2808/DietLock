@@ -26,7 +26,7 @@ From the repo root, on a Linux VM that has the Tauri system libraries (`libwebki
 .cursor/skills/verify-dietlock/scripts/dietlock-verify launch
 ```
 
-`launch` builds the debug binary with `cargo build -p dietlock` (the dev profile turns WebKit developer extras on; a release binary does not, so the inspector stays closed), starts a private Xvfb at 1280×800 and a private D-Bus session, and runs `target/debug/dietlock` with a disposable `HOME` and `XDG_DATA_HOME`. The window is 1080×700. The store is created empty and migrated to schema `user_version` 2. There is no seed data: an empty database is the usable state.
+`launch` builds the debug binary with `cargo build -p dietlock` (the dev profile turns WebKit developer extras on; a release binary does not, so the inspector stays closed), starts a private Xvfb at 1280×800 and a private D-Bus session, and runs `target/debug/dietlock` with a disposable `HOME` and `XDG_DATA_HOME`. The window is 1080×700. The store is created empty and migrated to schema `user_version` 3. There is no seed data: an empty database is the usable state.
 
 Ready means the process is up, the window is mapped, and `#headline` has text. On a fresh data dir, `launch` prints `ready headline: Pas encore de pesée.`, then:
 
@@ -52,7 +52,7 @@ Run this before the first drive, and again after any failure, before driving fur
 .cursor/skills/verify-dietlock/scripts/dietlock-verify doctor
 ```
 
-Pass means all of the following: the recorded pid is the `dietlock` binary, its Xvfb is alive, the inspector page lists a target named DietLock at `tauri://localhost`, `dietlock.sqlite` is inside this run's data dir and `PRAGMA user_version` is 2, and a viewable window is named DietLock. Anything else prints `doctor FAIL` and the script exits 1. Do not drive a failed doctor. Relaunch instead of reusing a window you did not start.
+Pass means all of the following: the recorded pid is the `dietlock` binary, its Xvfb is alive, the inspector page lists a target named DietLock at `tauri://localhost`, `dietlock.sqlite` is inside this run's data dir and `PRAGMA user_version` is 3, and a viewable window is named DietLock. Anything else prints `doctor FAIL` and the script exits 1. Do not drive a failed doctor. Relaunch instead of reusing a window you did not start.
 
 ## Drive
 
@@ -65,7 +65,7 @@ Read the screen:
 .cursor/skills/verify-dietlock/scripts/dietlock-verify eval 'document.getElementById("headline").textContent'
 ```
 
-`eval` runs one synchronous JavaScript expression in the page and prints the value. `text` prints `document.body.innerText`. `db` prints the `weigh_in` and `intake` rows.
+`eval` runs one synchronous JavaScript expression in the page and prints the value. `text` prints `document.body.innerText`. `db` prints the `weigh_in`, `intake` and `activity` rows.
 
 Stable handles, from `src/index.html`:
 
@@ -114,7 +114,7 @@ Landing check, on a fresh launch:
 .cursor/skills/verify-dietlock/scripts/dietlock-verify check-today
 ```
 
-It exits 0 only when `Aujourd'hui` shows `Pas encore de pesée.` in the left column and `Pas de moyenne sur 7 jours.` in the right column, the weigh-in chip on today, the intake chip on yesterday (with `hier oublié` from 04:00, hidden before that), the empty history sentence, no errors, schema 2 with no rows, a 1080×700 PNG whose OCR sees `Pas encore`, `première journée`, `Aujourd`, and `Poids`, and, after the `Poids` tab is opened, `Pas encore de courbe.`, `15 derniers jours`, and `aucune pesée`. A blank capture fails the OCR lines.
+It exits 0 only when `Aujourd'hui` shows `Pas encore de pesée.` in the left column and `Pas de moyenne sur 7 jours.` in the right column, the weigh-in chip on today, the intake chip on yesterday (with `hier oublié` from 04:00, hidden before that), the empty history sentence, no errors, schema 3 with no rows, a 1080×700 PNG whose OCR sees `Pas encore`, `première journée`, `Aujourd`, and `Poids`, and, after the `Poids` tab is opened, `Pas encore de courbe.`, `15 derniers jours`, and `aucune pesée`. A blank capture fails the OCR lines.
 
 Capture the action and the resulting state for any other journey: the command you ran, the history row or the confirmation text after it, and `db`. Do not mock the store.
 
