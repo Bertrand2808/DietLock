@@ -305,6 +305,46 @@ mod tests {
         s
     }
 
+    fn save_weigh(s: &mut Store, w: &WeighIn, replace: bool) -> SaveOutcome {
+        let existing = s.get_weigh_in(w.date()).unwrap();
+        apply_weigh(s, existing, decide_weigh_in(existing, *w), replace).unwrap()
+    }
+
+    #[test]
+    fn s3_unchecking_fasted_asks_and_shows_the_old_flag_without_writing() {
+        let mut s = filled_store();
+        let next = WeighIn::new(day("2026-10-13"), 826, false).unwrap();
+        let SaveOutcome::AlreadyFilled { old } = save_weigh(&mut s, &next, false) else {
+            panic!("expected a confirmation");
+        };
+        assert_eq!(old.weight, "82,6");
+        assert!(old.fasted);
+        let stored = s.get_weigh_in(day("2026-10-13")).unwrap().unwrap();
+        assert!(stored.fasted());
+    }
+
+    #[test]
+    fn s3_confirming_an_unchecked_fasted_keeps_the_weight_and_persists_the_flag() {
+        let mut s = filled_store();
+        let next = WeighIn::new(day("2026-10-13"), 826, false).unwrap();
+        assert_eq!(save_weigh(&mut s, &next, true), SaveOutcome::Saved);
+        let stored = s.get_weigh_in(day("2026-10-13")).unwrap().unwrap();
+        assert_eq!(stored.weight_tenth_kg(), 826);
+        assert!(!stored.fasted());
+        assert_eq!(save_weigh(&mut s, &next, false), SaveOutcome::Unchanged);
+    }
+
+    #[test]
+    fn s3_a_weight_only_change_still_asks_with_the_same_old_flag() {
+        let mut s = filled_store();
+        let next = WeighIn::new(day("2026-10-13"), 831, true).unwrap();
+        let SaveOutcome::AlreadyFilled { old } = save_weigh(&mut s, &next, false) else {
+            panic!("expected a confirmation");
+        };
+        assert_eq!(old.weight, "82,6");
+        assert!(old.fasted);
+    }
+
     #[test]
     fn s10_asking_to_delete_shows_the_stored_weigh_in_and_writes_nothing() {
         let s = filled_store();
