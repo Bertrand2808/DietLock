@@ -28,7 +28,7 @@ From the repo root, on a Linux VM that has the Tauri system libraries (`libwebki
 
 `launch` builds the debug binary with `cargo build -p dietlock` (the dev profile turns WebKit developer extras on; a release binary does not, so the inspector stays closed), starts a private Xvfb at 1280×800 and a private D-Bus session, and runs `target/debug/dietlock` with a disposable `HOME` and `XDG_DATA_HOME`. The window is 1080×700. The store is created empty and migrated to schema `user_version` 2. There is no seed data: an empty database is the usable state.
 
-Ready means the process is up, the window is mapped, and `#headline` has text. On a fresh data dir between 05:00 and 18:00, `launch` prints `ready headline: Bonjour.` (`Bonsoir.` outside that range), then:
+Ready means the process is up, the window is mapped, and `#headline` has text. On a fresh data dir, `launch` prints `ready headline: Pas encore de pesée.`, then:
 
 ```text
 run <run-id>
@@ -73,7 +73,7 @@ Stable handles, from `src/index.html`:
 | --- | --- |
 | `#tab-today` `#screen-today` | L'onglet `Aujourd'hui`. Selected on launch. |
 | `#tab-weight` `#screen-weight` | L'onglet `Poids`. Hidden until chosen. |
-| `#headline` `#subhead` | Greeting (`Bonjour.` / `Bonsoir.`) or `82,6` plus `kg de tendance`, and the line under it. |
+| `#headline` `#subhead` | Left column. Trend weight plus `kg`, then `moyenne à jeun, 7 derniers jours`. With no weigh-in, `#headline` is `Pas encore de pesée.` |
 | `#weigh-chip` `#weight` `#fasted` | Date de la pesée, weight in kg, `à jeun` checked by default. The chip's `data-date` is `YYYY-MM-DD`. |
 | `#intake-chip` `#protein` `#carbs` `#fat` `#water` `#forgot` | Date de l'alimentation, P / G / L / Eau. On an empty store the chip is yesterday. `#forgot` shows `hier oublié` from 04:00. |
 | `#weigh-error` `#intake-error` | `role="alert"`. Hidden when empty. Messages are French. |
@@ -114,7 +114,7 @@ Landing check, on a fresh launch:
 .cursor/skills/verify-dietlock/scripts/dietlock-verify check-today
 ```
 
-It exits 0 only when `Aujourd'hui` shows the greeting for the local hour, the empty subtitle, the weigh-in chip on today, the intake chip on yesterday (with `hier oublié` from 04:00, hidden before that), the empty history sentence, no errors, schema 2 with no rows, a 1080×700 PNG whose OCR sees `Pas encore de saisie`, `première journée`, `Aujourd`, and `Poids`, and, after the `Poids` tab is opened, `Pas encore de courbe.`, `15 derniers jours`, and `aucune pesée`. The large greeting is asserted from the page text; OCR of that serif line is unreliable. A blank capture fails the OCR lines.
+It exits 0 only when `Aujourd'hui` shows `Pas encore de pesée.` in the left column and `Pas de moyenne sur 7 jours.` in the right column, the weigh-in chip on today, the intake chip on yesterday (with `hier oublié` from 04:00, hidden before that), the empty history sentence, no errors, schema 2 with no rows, a 1080×700 PNG whose OCR sees `Pas encore`, `première journée`, `Aujourd`, and `Poids`, and, after the `Poids` tab is opened, `Pas encore de courbe.`, `15 derniers jours`, and `aucune pesée`. A blank capture fails the OCR lines.
 
 Capture the action and the resulting state for any other journey: the command you ran, the history row or the confirmation text after it, and `db`. Do not mock the store.
 

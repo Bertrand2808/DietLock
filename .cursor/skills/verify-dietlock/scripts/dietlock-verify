@@ -779,12 +779,6 @@ def local_today() -> str:
     return dt.date.today().isoformat()
 
 
-def expected_greeting() -> str:
-    """Same cut as `view::greeting`: Bonjour from 05:00 until 18:00."""
-    hour = dt.datetime.now().hour
-    return "Bonjour." if 5 <= hour < 18 else "Bonsoir."
-
-
 def expected_intake_date(_today: str) -> str:
     """Empty store: the intake chip stays on yesterday, including after noon."""
     return (dt.date.today() - dt.timedelta(days=1)).isoformat()
@@ -821,7 +815,10 @@ TODAY_SNAPSHOT = """JSON.stringify({
   savedHidden: document.getElementById("saved").hidden,
   confirmHidden: document.getElementById("confirm").hidden,
   history: document.getElementById("hist").innerText,
-  historyRows: document.querySelectorAll("#hist .day").length
+  historyRows: document.querySelectorAll("#hist .day").length,
+  energyFigure: document.getElementById("energy-figure").textContent,
+  energyNote: document.getElementById("energy-note").textContent,
+  energyPill: document.getElementById("energy-pill") ? document.getElementById("energy-pill").textContent : ""
 })"""
 
 WEIGHT_SNAPSHOT = """JSON.stringify({
@@ -879,17 +876,17 @@ def cmd_check_today(_args: list[str]) -> int:
     weigh, intake_rows = db_rows(state)
     version = schema_version(state)
     today = local_today()
-    greeting = expected_greeting()
     intake_date = expected_intake_date(today)
     forgot_hidden = dt.datetime.now().hour < 4
-    empty_subtitle = "Pas encore de saisie. La tendance apparaîtra après 4 pesées à jeun."
     ocr_flat = " ".join(recognized.split())
     history = screen.get("history") or ""
     checks = [
         ("doctor", not problems, "; ".join(problems)),
         ("title", screen.get("title") == "DietLock", repr(screen.get("title"))),
-        ("greeting", screen.get("headline") == greeting, repr(screen.get("headline"))),
-        ("empty subtitle", screen.get("subtitle") == empty_subtitle, repr(screen.get("subtitle"))),
+        ("empty weight column", screen.get("headline") == "Pas encore de pesée.", repr(screen.get("headline"))),
+        ("empty weight note", screen.get("subtitle") == "", repr(screen.get("subtitle"))),
+        ("empty energy column", screen.get("energyFigure") == "Pas de moyenne sur 7 jours.", repr(screen.get("energyFigure"))),
+        ("empty energy note", screen.get("energyNote") == "" and screen.get("energyPill") == "", repr((screen.get("energyNote"), screen.get("energyPill")))),
         ("today tab selected", screen.get("todayTab") == "true", repr(screen.get("todayTab"))),
         ("weight tab label", screen.get("weightTab") == "Poids", repr(screen.get("weightTab"))),
         ("today screen visible", screen.get("todayHidden") is False, repr(screen.get("todayHidden"))),
@@ -907,7 +904,7 @@ def cmd_check_today(_args: list[str]) -> int:
         ("no weigh-in rows", len(weigh) == 0, repr(weigh)),
         ("no intake rows", len(intake_rows) == 0, repr(intake_rows)),
         ("png size", (png_width, png_height) == (width, height) == WINDOW, f"{png_width}x{png_height} window {width}x{height}"),
-        ("ocr empty copy", "Pas encore de saisie" in ocr_flat and "Aujourd" in ocr_flat, "missing from OCR"),
+        ("ocr empty copy", "Pas encore" in ocr_flat and "Aujourd" in ocr_flat, "missing from OCR"),
         ("ocr empty history", "première journée" in ocr_flat, "missing from OCR"),
         ("ocr weight tab", "Poids" in ocr_flat, "missing from OCR"),
         ("weight screen headline", weight.get("headline") == "Pas encore de courbe.", repr(weight.get("headline"))),
