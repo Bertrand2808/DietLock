@@ -4,10 +4,6 @@ All notable changes to DietLock are listed here. Format based on [Keep a Changel
 
 ## [Unreleased]
 
-### Added
-
-- A weigh-in or an intake can be deleted from the history after confirmation. The confirmation shows the date and the values. Macros and water go together. The trend and alerts are recalculated (S10, T5).
-
 ## [0.2.0] - 2026-11-05
 
 ### Added

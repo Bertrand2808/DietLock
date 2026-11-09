@@ -14,7 +14,6 @@ import {
   shortcutState,
 } from "./calendar.js";
 import { renderChart } from "./chart.js";
-import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { savesOnEnter, screenShortcut } from "./keys.js";
 import { blockStatus, intakeConfirmText, saveBlocks } from "./save.js";
 
@@ -55,6 +54,10 @@ function errorText(e) {
   if (typeof e === "string") return e;
   if (e && typeof e.message === "string") return e.message;
   return String(e);
+}
+
+function groupKcal(n) {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
 }
 
 function paintChip(id, kind) {
@@ -121,16 +124,6 @@ function renderHeadline(listing) {
   setSubtitle(listing.subtitle);
 }
 
-function deleteButton(day, block, name) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "del";
-  button.textContent = block === "weighIn" ? "× pesée" : "× alim.";
-  button.setAttribute("aria-label", `Supprimer ${name} du ${day.label}`);
-  button.addEventListener("click", () => askDelete(day, block));
-  return button;
-}
-
 function renderHistory(days) {
   const hist = $("hist");
   const rows = days.filter((d) => d.weightLabel || d.detail);
@@ -162,11 +155,7 @@ function renderHistory(days) {
     const detail = document.createElement("span");
     detail.className = "k";
     detail.textContent = day.detail ?? "";
-    const acts = document.createElement("span");
-    acts.className = "acts";
-    if (day.weighIn) acts.append(deleteButton(day, "weighIn", "la pesée"));
-    if (day.intake) acts.append(deleteButton(day, "intake", "l'alimentation"));
-    row.append(date, weight, detail, acts);
+    row.append(date, weight, detail);
     hist.append(row);
   }
 }
@@ -487,51 +476,6 @@ function showNextConfirm() {
   $("confirm").hidden = false;
 }
 
-let pendingDelete = null;
-
-function hideDeleteConfirm() {
-  pendingDelete = null;
-  $("delete-confirm").hidden = true;
-  $("delete-yes").hidden = false;
-}
-
-async function askDelete(day, block) {
-  if (busy) return;
-  hideDeleteConfirm();
-  try {
-    const outcome = await invoke("delete_entry", { date: day.date, block, confirm: false });
-    if (outcome.status === "confirm") {
-      pendingDelete = { date: day.date, block };
-      $("delete-text").textContent = deleteQuestion(day.label, outcome.target);
-      $("delete-confirm").hidden = false;
-    } else {
-      await refresh();
-    }
-  } catch (e) {
-    $("delete-text").textContent = errorText(e);
-    $("delete-confirm").hidden = false;
-    $("delete-yes").hidden = true;
-  }
-}
-
-async function onDeleteConfirmed() {
-  const item = pendingDelete;
-  if (!item || busy) return;
-  busy = true;
-  const { deleted, error } = await deleteThenReload(
-    () => invoke("delete_entry", { ...item, confirm: true }),
-    refresh,
-  );
-  if (error) {
-    $("delete-text").textContent = deleteFailureText(deleted, errorText(error));
-    $("delete-yes").hidden = true;
-    $("delete-confirm").hidden = false;
-  } else {
-    hideDeleteConfirm();
-  }
-  busy = false;
-}
-
 function dayWasSaved(outcome) {
   const failed = outcome.weighIn === "error" || outcome.intake === "error";
   const waiting = outcome.weighIn === "confirm" || outcome.intake === "confirm";
@@ -754,8 +698,6 @@ document.addEventListener("click", (event) => {
   closePicker();
 });
 $("confirm-replace").addEventListener("click", onReplace);
-$("delete-yes").addEventListener("click", onDeleteConfirmed);
-$("delete-no").addEventListener("click", hideDeleteConfirm);
 $("confirm-cancel").addEventListener("click", () => {
   queue.shift();
   showNextConfirm();

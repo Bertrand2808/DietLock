@@ -7,7 +7,7 @@ use dietlock_core::{
     variation,
 };
 use dietlock_store::StoreError;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// Number of calendar days shown in the history (J−29 to J).
 pub const HISTORY_DAYS: u16 = 30;
@@ -105,34 +105,6 @@ pub enum IntakeSaveOutcome {
     AlreadyFilled {
         old: IntakeView,
     },
-}
-
-/// The block of a day that a deletion targets (S10). Macros and water go together.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DeleteBlock {
-    WeighIn,
-    Intake,
-}
-
-/// The stored block that a deletion would remove.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum DeleteTarget {
-    WeighIn(WeighInView),
-    Intake(IntakeView),
-}
-
-/// Result of `delete_entry` when nothing went wrong.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "status", rename_all = "camelCase")]
-pub enum DeleteOutcome {
-    /// The block was removed.
-    Deleted,
-    /// The block does not exist (any more). Nothing was written.
-    NothingToDelete,
-    /// Not confirmed yet; nothing was written. `target` is what would go.
-    Confirm { target: DeleteTarget },
 }
 
 /// One day of the history; either entry may be missing.
