@@ -126,6 +126,21 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn deleting_an_intake_keeps_its_weigh_in_and_other_dates() {
+        let mut s = store();
+        let w = weigh("2026-10-13", 826, true);
+        let other = intake("2026-10-14", Some(2000));
+        s.save_weigh_in(&w, false).unwrap();
+        s.save_intake(&intake("2026-10-13", Some(1500)), false)
+            .unwrap();
+        s.save_intake(&other, false).unwrap();
+        s.delete_intake(day("2026-10-13")).unwrap();
+        assert_eq!(s.get_intake(day("2026-10-13")).unwrap(), None);
+        assert_eq!(s.get_weigh_in(day("2026-10-13")).unwrap(), Some(w));
+        assert_eq!(s.get_intake(day("2026-10-14")).unwrap(), Some(other));
+    }
+
+    #[test]
     fn weigh_in_and_intake_are_independent() {
         let mut s = store();
         s.save_weigh_in(&weigh("2026-10-13", 826, true), false)
