@@ -1,6 +1,6 @@
 # Weigh-in
 
-A weigh-in is the body weight for one day, in kilograms, marked fasted or not. It is typed in the top row of the `Aujourd'hui` card and saved with the `↑` button. The history then shows that day. The greeting stays until four fasted weigh-ins exist in the seven-day window; once any day is saved and there is still no trend, the big line is empty and the subtitle still says the trend is waiting.
+A weigh-in is the body weight for one day, in kilograms, marked fasted or not. It is typed in the top row of the `Aujourd'hui` card and saved with the `↑` button. The history then shows that day. The left column shows a trend weight only after four fasted weigh-ins in the seven-day window. Before that, and once any day is saved, the column says the trend is waiting.
 
 ## Sub-features
 
@@ -33,5 +33,5 @@ Preconditions:
 - Click `#save`. There is no `Enregistrer` button and no `#weigh-in-form` submit. Submitting `#entry` does nothing.
 - Leaving the weight field empty skips the weigh-in. The click can still save an intake if those fields are filled.
 - The expression returns `submitted` before the row exists. Wait for `82,6 kg` or for `#saved` to show `✓ Journée enregistrée`.
-- After this first save the headline is empty. The subtitle remains `Pas encore de saisie. La tendance apparaîtra après 4 pesées à jeun.` Do not treat the missing greeting as a failed save.
+- After this first save the headline is `La tendance apparaîtra après 4 pesées à jeun.` There is still no trend weight. Do not treat that sentence as a failed save.
 - A future date is refused in French and nothing is written. Pick the day from the chip (`#weigh-chip`, then a day in `#date-pop`) rather than typing an ISO date into a field that is not there.

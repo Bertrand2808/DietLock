@@ -46,7 +46,7 @@ Keep implementation details out of the map. Name only user paths, stable handles
 
 ## Features
 
-- [Today's screen](./today.md) covers `Aujourd'hui` on an empty store: greeting, chips, empty history, and the screenshot check.
+- [Today's screen](./today.md) covers `Aujourd'hui` on an empty store: the two empty columns, chips, empty history, and the screenshot check.
 - [Weight curve](./weight.md) covers the `Poids` screen, the 15-day empty state, and the 30-day switch.
 - [Weigh-in](./weigh-in.md) covers saving today's fasted weight from the entry card.
 - [Intake](./intake.md) covers saving macros and optional water from the same card.

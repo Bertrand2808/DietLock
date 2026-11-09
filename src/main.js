@@ -91,44 +91,42 @@ function paintChips() {
   paintChip("intake-chip", "intake");
 }
 
-function setSubtitle(text) {
-  const sub = $("subhead");
-  sub.replaceChildren();
-  const kcal = text.indexOf("kcal");
-  if (kcal === -1) {
-    sub.textContent = text;
-    return;
-  }
-  const strong = document.createElement("b");
-  strong.textContent = text.slice(0, kcal + 4);
-  sub.append(strong, text.slice(kcal + 4));
+function kcalOn(listing, iso) {
+  const day = listing.days.find((item) => item.date === iso);
+  if (!day || !day.intake) return null;
+  return day.intake.energyKcal;
 }
 
 function renderHeadline(listing) {
   const headline = $("headline");
+  const sub = $("subhead");
   headline.replaceChildren();
+  sub.replaceChildren();
   if (listing.isTrend) {
-    headline.classList.remove("greet");
+    headline.className = "trend";
     const num = document.createElement("span");
     num.className = "num";
     num.textContent = listing.primary;
     const unit = document.createElement("small");
-    unit.textContent = " kg de tendance";
+    unit.textContent = " kg";
     headline.append(num, unit);
+    sub.textContent = "moyenne à jeun, 7 derniers jours";
   } else {
-    headline.textContent = listing.primary;
-    headline.classList.toggle("greet", listing.primary.length > 0);
+    headline.className = "energy-empty";
+    const anyWeighIn = listing.days.some((day) => day.weighIn);
+    headline.textContent = anyWeighIn
+      ? "La tendance apparaîtra après 4 pesées à jeun."
+      : "Pas encore de pesée.";
   }
-  setSubtitle(listing.subtitle);
-  document.querySelector("#screen-today .head").classList.toggle("with-trend", listing.isTrend);
-  renderEnergy(listing.energyWeek);
+  renderEnergy(listing.energyWeek, kcalOn(listing, addDays(listing.today, -1)));
 }
 
-function renderEnergy(week) {
-  const copy = energyCopy(week);
+function renderEnergy(week, yesterdayKcal) {
+  const copy = energyCopy(week, yesterdayKcal);
   const figure = $("energy-figure");
   const note = $("energy-note");
   figure.replaceChildren();
+  note.replaceChildren();
   if (copy.kind === "present") {
     figure.className = "trend";
     const num = document.createElement("span");
@@ -141,7 +139,15 @@ function renderEnergy(week) {
     figure.className = "energy-empty";
     figure.textContent = copy.sentence;
   }
-  note.textContent = copy.note;
+  if (copy.pill) {
+    const pill = document.createElement("span");
+    pill.id = "energy-pill";
+    pill.className = `pill ${copy.pill.tone}`;
+    pill.textContent = copy.pill.text;
+    note.append(pill);
+    if (copy.note) note.append(document.createElement("br"));
+  }
+  if (copy.note) note.append(copy.note);
 }
 
 function deleteButton(day, block, name) {
