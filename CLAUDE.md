@@ -39,6 +39,7 @@ The UI is raw HTML and JS (`src/index.html`, `src/main.js`, no framework or bund
 - Tests are inline `#[cfg(test)] mod tests` in the module they cover. Shared helpers live in the `tests` module of each crate's `lib.rs` (`pub(crate)`); tests spanning both entities stay there. Store tests use `Store::open_in_memory()`.
 - Dependency licences must be on the allowlist in `deny.toml` (MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0, or a per-crate exception). A new dependency with another licence fails CI.
 - Commit messages follow Conventional Commits with a scope, e.g. `feat(store): ...`.
+- Every PR targets `dev` (`gh pr create --base dev`). `main` only receives a release PR `dev`→`main` that Bertrand asks for.
 
 ## What you need from me
 
