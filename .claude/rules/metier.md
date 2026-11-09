@@ -60,6 +60,17 @@ The Trend of a day is the simple mean of the valid weigh-ins over the last 7 cal
 - **T7 · Weigh-ins in alert.** A Weigh-in that triggered an Alert stays in the Trend.
 - **T8 · Changes.** Displayed changes (7 days, 4 weeks) are computed from the Trend, never from raw weigh-ins. If J or J−7 (or J−28) has no Trend, the corresponding change is not displayed.
 
+## Energy mean
+
+The home screen shows, beside the weight trend, the mean Energy of the 7 calendar days ending yesterday, and how it differs from the 7 days before that. It is computed on demand and never stored.
+
+- **E1 · Window.** The mean covers J−7 to J−1, where J is today. Today is outside the window. The previous week is J−14 to J−8.
+- **E2 · Counted days.** A day with an Intake counts, including an Intake whose Energy is 0 kcal. A day without an Intake does not. N is the number of counted days.
+- **E3 · No mean.** If the window holds no Intake, there is no mean. That absence is not 0.
+- **E4 · Gap.** The gap is this week's displayed mean minus the previous week's displayed mean, in whole kcal, with a sign. If the previous week holds no Intake, there is no gap. That absence is not 0. A real tie is a gap of 0.
+- **E5 · Rounding.** Each day's Energy is already a whole kcal (S8). The mean is the sum of those energies divided by N, rounded half away from zero to a whole kcal. The gap subtracts the two displayed means.
+- **E6 · Refresh.** Adding, replacing or deleting an Intake recalculates the mean and the gap at once.
+
 ## Alert
 
 An Alert triggers when a Weigh-in deviates by 3 kg or more from the previous day's Trend, upward or downward.
@@ -81,3 +92,4 @@ An Alert triggers when a Weigh-in deviates by 3 kg or more from the previous day
 ## Open points
 
 - [ ] Verify in use the ranges in S7, the 4-weigh-in threshold (T3) and the 3 kg alert threshold (A2).
+- [ ] The weight-curve note of 1 Nov 2026 says a future kcal trend should use 15 days. E1 follows the accepted story and uses 7 days ending yesterday. Decide later whether the two windows should match.

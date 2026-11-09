@@ -2,9 +2,9 @@
 //! Pure functions, so they are unit-tested without a running app.
 
 use dietlock_core::{
-    Day, DuplicateDate, Intake, MACRO_G_MAX, ProposedIntake, TREND_WINDOW_DAYS, ValidationError,
-    WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert, display_tenth_kg, energy_kcal, trend,
-    variation,
+    Day, DuplicateDate, DuplicateIntakeDate, ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX,
+    ProposedIntake, TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN,
+    WeighIn, alert, display_tenth_kg, energy_kcal, energy_week, trend, variation,
 };
 use dietlock_store::StoreError;
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,8 @@ pub const HISTORY_DAYS: u16 = 30;
 
 // The history must cover the trend window, since the trend is computed on it.
 const _: () = assert!(HISTORY_DAYS >= TREND_WINDOW_DAYS);
+// Both energy weeks end at yesterday and start at J−14, which the history includes.
+const _: () = assert!(HISTORY_DAYS > ENERGY_WEEK_DAYS * 2);
 
 /// First day of the history ending at `today`; `today` itself at the lower
 /// bound of the calendar.
@@ -176,6 +178,8 @@ pub struct Listing {
     pub is_trend: bool,
     /// Line under the headline: kcal, the empty-state invitation, or both.
     pub subtitle: String,
+    /// Mean of the 7 days ending yesterday. Absence is not a mean of 0. E1–E4.
+    pub energy_week: EnergyWeekView,
     /// Date proposed for the weigh-in (D1).
     pub weigh_in_date: String,
     /// `Aujourd'hui` or `Hier`.
@@ -192,6 +196,34 @@ pub struct Listing {
     pub days: Vec<DayView>,
     /// Today's trend as displayed, `None` when there is none yet.
     pub trend: Option<String>,
+}
+
+/// The week ending yesterday, as the screen receives it.
+/// `Absent` is not a mean of 0. A `gap_kcal` of `None` is not a gap of 0.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum EnergyWeekView {
+    Absent,
+    Present {
+        kcal: u32,
+        days: u32,
+        /// Named on the wire: `rename_all` left this field as `gap_kcal`.
+        #[serde(rename = "gapKcal")]
+        gap_kcal: Option<i32>,
+    },
+}
+
+impl From<Option<EnergyWeek>> for EnergyWeekView {
+    fn from(week: Option<EnergyWeek>) -> Self {
+        match week {
+            None => Self::Absent,
+            Some(week) => Self::Present {
+                kcal: week.mean().kcal(),
+                days: week.mean().days(),
+                gap_kcal: week.gap_kcal(),
+            },
+        }
+    }
 }
 
 /// `Bonjour.` from 5:00 until 18:00, `Bonsoir.` otherwise.
@@ -420,6 +452,7 @@ impl Listing {
     /// row can be checked for an alert. `intakes` cover the history.
     /// One row per date at most. `trend_hundredth` is `dietlock_core::trend`
     /// of `today`. `hour` is the local hour, used only for the empty greeting.
+    /// `Err` when two intakes share a date (S2).
     pub fn new(
         today: Day,
         hour: u8,
@@ -428,7 +461,8 @@ impl Listing {
         weigh_ins: &[WeighIn],
         intakes: &[Intake],
         trend_hundredth: Option<u32>,
-    ) -> Self {
+    ) -> Result<Self, DuplicateIntakeDate> {
+        let energy_week = EnergyWeekView::from(energy_week(intakes, today)?);
         let from = history_start(today);
         let has_data = weigh_ins
             .iter()
@@ -482,11 +516,12 @@ impl Listing {
             };
             (String::new(), false, subtitle)
         };
-        Self {
+        Ok(Self {
             today: today.to_string(),
             primary,
             is_trend,
             subtitle,
+            energy_week,
             weigh_in_date: weigh_in_day.to_string(),
             weigh_in_when: relative_name(weigh_in_day, today).to_owned(),
             weigh_in_label: french_date(weigh_in_day),
@@ -496,7 +531,7 @@ impl Listing {
             forgotten_yesterday: proposed_intake.forgotten_yesterday,
             days,
             trend,
-        }
+        })
     }
 }
 
@@ -588,6 +623,11 @@ pub fn duplicate_date_message() -> &'static str {
     "Deux pesées portent la même date."
 }
 
+/// Shown when the history contains two intakes on the same day.
+pub fn duplicate_intake_message() -> &'static str {
+    "Deux alimentations portent la même date."
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -625,6 +665,7 @@ mod tests {
             is,
             trend,
         )
+        .expect("fixture intakes have one row per date")
     }
 
     #[test]
@@ -826,6 +867,54 @@ mod tests {
             duplicate_date_message(),
             "Deux pesées portent la même date."
         );
+        assert_eq!(
+            duplicate_intake_message(),
+            "Deux alimentations portent la même date."
+        );
+    }
+
+    #[test]
+    fn e3_absence_stays_distinct_from_a_zero_kcal_day() {
+        let today_only = macros("2026-11-09", 2500, 0, 0, None);
+        let absent = home("2026-11-09", 10, &[], &[today_only], Some(8200));
+        assert!(absent.is_trend);
+        assert_eq!(absent.energy_week, EnergyWeekView::Absent);
+
+        let zero = macros("2026-11-08", 0, 0, 0, None);
+        let counted = home("2026-11-09", 10, &[], &[zero], None);
+        assert_eq!(
+            counted.energy_week,
+            EnergyWeekView::Present {
+                kcal: 0,
+                days: 1,
+                gap_kcal: None,
+            }
+        );
+    }
+
+    #[test]
+    fn e4_a_missing_previous_week_is_not_a_zero_gap() {
+        // 300 g of protein is 1 200 kcal. The previous week (ending 11-01) is empty.
+        let current = macros("2026-11-08", 3000, 0, 0, None);
+        let earlier = macros("2026-11-01", 2500, 0, 0, None);
+        let open = home("2026-11-09", 10, &[], &[current], None);
+        assert_eq!(
+            open.energy_week,
+            EnergyWeekView::Present {
+                kcal: 1200,
+                days: 1,
+                gap_kcal: None,
+            }
+        );
+        let compared = home("2026-11-09", 10, &[], &[current, earlier], None);
+        assert_eq!(
+            compared.energy_week,
+            EnergyWeekView::Present {
+                kcal: 1200,
+                days: 1,
+                gap_kcal: Some(200),
+            }
+        );
     }
 
     fn macros(d: &str, protein: u16, carbs: u16, fat: u16, water: Option<u16>) -> Intake {
@@ -924,7 +1013,8 @@ mod tests {
             &[],
             &[macros("2026-10-26", 1650, 1800, 650, Some(2150))],
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(proposed.date.to_string(), "2026-10-25");
         assert!(l.forgotten_yesterday);
         assert_eq!(l.weigh_in_when, "Aujourd'hui");
@@ -947,7 +1037,7 @@ mod tests {
                 today: true,
             },
         );
-        let l = Listing::new(today, 14, today, proposed, &[], &[], None);
+        let l = Listing::new(today, 14, today, proposed, &[], &[], None).unwrap();
         assert!(!proposed.forgotten_yesterday);
         assert_eq!(l.intake_date, "2026-10-26");
         assert_eq!(l.intake_when, "Aujourd'hui");

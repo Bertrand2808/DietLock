@@ -7,6 +7,7 @@ Suivi quotidien du poids, des macros et de l'hydratation, avec une tendance de p
 - Chaque matin : saisie du poids du jour (à jeun ou non).
 - Chaque soir : saisie des macros (protéines, glucides, lipides) et de l'eau ; les kcal sont calculées.
 - Tendance de poids : moyenne des pesées à jeun sur 7 jours, affichée dès 4 pesées dans la fenêtre.
+- À côté : moyenne des kcal sur les 7 jours qui se terminent hier, et l'écart avec les 7 jours d'avant.
 - Données stockées uniquement en local (SQLite), sans compte ni réseau.
 
 **État (v0.2.0)** : un écran d'accueil (tendance, saisie, 30 jours de poids, d'énergie et d'eau) et un écran de courbe de poids, qui suivent le mode clair ou sombre. Pas encore d'objectifs.

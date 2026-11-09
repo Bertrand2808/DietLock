@@ -208,7 +208,8 @@ pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
         today: intakes.iter().any(|i| i.date() == today),
     };
     let proposed = core_proposed_intake_date(today, now, SwitchHour::default(), presence);
-    Ok(Listing::new(
+    // The history starts 29 days back, so it covers both energy weeks (J−14 to yesterday).
+    Listing::new(
         today,
         now.hour(),
         proposed_weigh_in_date(today),
@@ -216,7 +217,8 @@ pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
         &weigh_ins,
         &intakes,
         trend,
-    ))
+    )
+    .map_err(|_| view::duplicate_intake_message().to_owned())
 }
 
 /// Weight screen: one point per weigh-in and the trend of each day, over 30 days.

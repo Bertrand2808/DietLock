@@ -39,13 +39,14 @@ def main(argv: list[str]) -> int:
         print(__doc__)
         print(
             "usage: dietlock-verify "
-            "launch | doctor | eval EXPR | text | db | screenshot [PATH] | "
+            "launch | relaunch | doctor | eval EXPR | text | db | screenshot [PATH] | "
             "check-today | cargo-test [-- CARGO_ARGS...] | frontend-test | cleanup"
         )
         return 0 if len(argv) > 1 else 2
     cmd, args = argv[1], argv[2:]
     commands = {
         "launch": cmd_launch,
+        "relaunch": cmd_relaunch,
         "doctor": cmd_doctor,
         "eval": cmd_eval,
         "text": cmd_text,
@@ -378,6 +379,51 @@ def wait_until_ready(state: dict) -> None:
         last = f"headline still empty ({headline!r})"
         time.sleep(0.25)
     raise VerifyError(f"DietLock did not become usable within 20s: {last}")
+
+
+def process_environ(pid: int) -> dict[str, str]:
+    raw = Path(f"/proc/{pid}/environ").read_bytes()
+    env: dict[str, str] = {}
+    for item in raw.split(b"\0"):
+        if not item or b"=" not in item:
+            continue
+        key, value = item.split(b"=", 1)
+        env[key.decode()] = value.decode()
+    return env
+
+
+def cmd_relaunch(_args: list[str]) -> int:
+    """Close DietLock and open it again on the same data directory."""
+    state = require_state()
+    if not pid_alive(int(state["xvfb_pid"])):
+        raise VerifyError("Xvfb is not running; cleanup and launch again")
+    app_pid = int(state["app_pid"])
+    if not pid_alive(app_pid):
+        raise VerifyError("DietLock is not running; cleanup and launch again")
+    env = process_environ(app_pid)
+    kill_tree(app_pid)
+    deadline = time.time() + 5
+    while pid_alive(app_pid) and time.time() < deadline:
+        time.sleep(0.05)
+    if pid_alive(app_pid):
+        raise VerifyError("DietLock did not exit")
+    log_path = Path(state["instance_dir"]) / "app.log"
+    app_log = open(log_path, "a")
+    app = subprocess.Popen(
+        [state["binary"]],
+        cwd=state["repo"],
+        env=env,
+        stdout=app_log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    state["app_pid"] = app.pid
+    state_path = Path(state["instance_dir"]) / "state.json"
+    state_path.write_text(json.dumps(state, indent=2) + "\n")
+    wait_until_ready(state)
+    print(f"reopened pid {app.pid}")
+    print(f"data {state['db']}")
+    return 0
 
 
 def cmd_doctor(_args: list[str]) -> int:
@@ -888,6 +934,7 @@ def cmd_frontend_test(_args: list[str]) -> int:
         "src/chart.test.js",
         "src/keys.test.js",
         "src/save.test.js",
+        "src/energy.test.js",
     ]
     command = ["node", "--test", *files]
     proc = subprocess.run(command, cwd=REPO, capture_output=True, text=True)

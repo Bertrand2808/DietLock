@@ -51,3 +51,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Weigh-in](./weigh-in.md) covers saving today's fasted weight from the entry card.
 - [Intake](./intake.md) covers saving macros and optional water from the same card.
 - [Replace a day](./replace.md) covers the confirmation when that date already has a weigh-in or an intake.
+- [Energy week](./energy-week.md) covers the 7-day kcal mean beside the weight trend, the signed gap, the empty cases, and a restart.
