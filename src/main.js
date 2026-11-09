@@ -15,6 +15,7 @@ import {
 } from "./calendar.js";
 import { renderChart } from "./chart.js";
 import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
+import { energyCopy } from "./energy.js";
 import { savesOnEnter, screenShortcut } from "./keys.js";
 import { blockStatus, intakeConfirmText, saveBlocks } from "./save.js";
 
@@ -119,6 +120,28 @@ function renderHeadline(listing) {
     headline.classList.toggle("greet", listing.primary.length > 0);
   }
   setSubtitle(listing.subtitle);
+  document.querySelector("#screen-today .head").classList.toggle("with-trend", listing.isTrend);
+  renderEnergy(listing.energyWeek);
+}
+
+function renderEnergy(week) {
+  const copy = energyCopy(week);
+  const figure = $("energy-figure");
+  const note = $("energy-note");
+  figure.replaceChildren();
+  if (copy.kind === "present") {
+    figure.className = "trend";
+    const num = document.createElement("span");
+    num.className = "num";
+    num.textContent = copy.kcalText;
+    const unit = document.createElement("small");
+    unit.textContent = " kcal";
+    figure.append(num, unit);
+  } else {
+    figure.className = "energy-empty";
+    figure.textContent = copy.sentence;
+  }
+  note.textContent = copy.note;
 }
 
 function deleteButton(day, block, name) {

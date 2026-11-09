@@ -3,6 +3,7 @@
 mod alert;
 mod day;
 mod energy;
+mod energy_week;
 mod entry_save;
 mod error;
 mod input;
@@ -14,6 +15,7 @@ mod weigh_in;
 pub use alert::{ALERT_HUNDREDTH_KG, alert};
 pub use day::Day;
 pub use energy::energy_kcal;
+pub use energy_week::{DuplicateIntakeDate, ENERGY_WEEK_DAYS, EnergyMean, EnergyWeek, energy_week};
 pub use entry_save::{SaveDecision, decide_intake, decide_water, decide_weigh_in};
 pub use error::ValidationError;
 pub use input::{parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg};

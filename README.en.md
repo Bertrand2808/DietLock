@@ -7,6 +7,7 @@ Daily tracking of weight, macros and hydration, with a smoothed weight trend. De
 - Every morning: enter today's weight (fasted or not).
 - Every evening: enter the day's macros (protein, carbohydrate, fat) and water; kcal are computed.
 - Weight trend: mean of the fasted weigh-ins over 7 days, shown once the window holds at least 4.
+- Beside it: mean kcal over the 7 days ending yesterday, and the gap with the 7 days before.
 - Data stays on your machine (SQLite), no account, no network.
 
 **Status (v0.2.0)**: a home screen (trend, entry, 30 days of weight, energy and water) and a weight curve screen, both following light and dark mode. No targets yet.

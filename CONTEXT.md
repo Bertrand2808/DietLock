@@ -28,6 +28,14 @@ _Avoid_: Nutrients, nutrition values
 The kcal of a Day, derived from its Macros. It is never entered.
 _Avoid_: Calories
 
+**Energy mean**:
+The simple mean of Energy over the Intakes in the 7 calendar days ending yesterday. A day without an Intake is left out. An Intake of 0 kcal counts. The mean does not exist when that window has no Intake.
+_Avoid_: Calorie average, weekly calories
+
+**Energy gap**:
+The Energy mean minus the Energy mean of the 7 calendar days before that window, in whole kcal. It does not exist when the earlier week has no Intake. A tie is a gap of 0.
+_Avoid_: Delta, variance
+
 ## Trend and alerts
 
 **Trend**:
@@ -52,4 +60,6 @@ _Avoid_: Cutoff, day boundary
 
 - A Day holds at most one Weigh-in and at most one Intake; either can exist without the other.
 - A Trend is derived from Weigh-ins only.
+- An Energy mean is derived from Intakes only. A missing Intake is not a zero.
+- An Energy gap compares two Energy means. A missing previous week is not a zero gap.
 - An Alert belongs to one Weigh-in and is measured against the Trend of the previous Day.

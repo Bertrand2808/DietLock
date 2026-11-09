@@ -106,7 +106,7 @@ Proof files go to `/tmp/dietlock-verify-evidence/<run-id>/`. Put that path, or t
 - DOM text beside it: `today.dom.txt`, `today.dom.json`, and `weight.dom.json`.
 - Side effect: `dietlock-verify db` (zero rows on the landing check).
 - Rust proof: `dietlock-verify cargo-test` or `dietlock-verify cargo-test -- -p dietlock-core`. The script writes `cargo-test.txt`.
-- Frontend proof, no browser: `dietlock-verify frontend-test`, which runs `node --test` on `src/calendar.test.js`, `src/chart.test.js`, `src/keys.test.js`, and `src/save.test.js`, and writes `frontend-test.txt`.
+- Frontend proof, no browser: `dietlock-verify frontend-test`, which runs `node --test` on `src/calendar.test.js`, `src/chart.test.js`, `src/keys.test.js`, `src/save.test.js`, and `src/energy.test.js`, and writes `frontend-test.txt`.
 
 Landing check, on a fresh launch:
 
@@ -134,6 +134,7 @@ Run `cleanup` after a failed launch too. `launch` already kills processes if it 
 
 ```bash
 .cursor/skills/verify-dietlock/scripts/dietlock-verify launch
+.cursor/skills/verify-dietlock/scripts/dietlock-verify relaunch
 .cursor/skills/verify-dietlock/scripts/dietlock-verify doctor
 .cursor/skills/verify-dietlock/scripts/dietlock-verify text
 .cursor/skills/verify-dietlock/scripts/dietlock-verify eval 'document.title'
@@ -147,6 +148,8 @@ Run `cleanup` after a failed launch too. `launch` already kills processes if it 
 ```
 
 `screenshot` with no path writes `<evidence>/screen.png`.
+
+`relaunch` closes the DietLock process of the current run and starts the same binary again on that run's data directory, Xvfb and D-Bus session. The database is kept. Use it to prove a figure survives a restart. It refuses when the app or its Xvfb is already gone. `cleanup` is still what deletes the data directory.
 
 ## What this cannot verify
 
