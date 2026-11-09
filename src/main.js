@@ -28,7 +28,13 @@ import { renderChart } from "./chart.js";
 import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { energyCopy } from "./energy.js";
 import { savesOnEnter, screenShortcut } from "./keys.js";
-import { blockStatus, intakeConfirmText, saveBlocks, weighInConfirmText } from "./save.js";
+import {
+  blockStatus,
+  intakeConfirmText,
+  nextWaterField,
+  saveBlocks,
+  weighInConfirmText,
+} from "./save.js";
 
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
@@ -50,6 +56,8 @@ let viewYear = 2026;
 let viewMonth = 1;
 let queue = [];
 let busy = false;
+// True once the user has typed in the water field since it was last synced (S5).
+let waterDirty = false;
 let screenName = "today";
 let span = 15;
 let curve = null;
@@ -63,6 +71,21 @@ function weighDateNow() {
 
 function intakeDateNow() {
   return chosenIntake ?? proposedIntake;
+}
+
+// S5: the water field shows the water stored for the selected intake date, so
+// leaving it as it is keeps that water and clearing it is a deliberate reset.
+async function syncWater() {
+  const date = intakeDateNow();
+  if (!date) return;
+  try {
+    const stored = await invoke("intake_water", { date });
+    if (date !== intakeDateNow()) return;
+    const field = $("water");
+    field.value = nextWaterField({ dirty: waterDirty, current: field.value, stored });
+  } catch (e) {
+    showBlockError("intake", errorText(e));
+  }
 }
 
 function errorText(e) {
@@ -231,6 +254,7 @@ function renderHistory(days) {
 function render(listing) {
   if (seenIntakeDate !== null && listing.intakeDate !== seenIntakeDate && chosenIntake === null) {
     for (const id of ["protein", "carbs", "fat", "water"]) $(id).value = "";
+    waterDirty = false;
     $("saved").hidden = true;
   }
   if (seenWeighDate !== null && listing.weighInDate !== seenWeighDate && chosenWeigh === null) {
@@ -248,6 +272,7 @@ function render(listing) {
   filledIntake = filledDates(listing.days, "intake");
   renderHeadline(listing);
   paintChips();
+  syncWater();
   if (openKind) renderPop();
   renderHistory(listing.days);
 }
@@ -528,6 +553,8 @@ async function commitIntake(entry, replace) {
       replace,
     });
     const status = blockStatus(outcome.status);
+    // Stored water now matches the field, so the next refresh may resync it.
+    if (status === "saved" || status === "skipped") waterDirty = false;
     if (status === "confirm") {
       queue.push({
         kind: "intake",
@@ -749,6 +776,8 @@ function selectDay(kind, iso) {
   }
   if (kind === "weigh") chosenWeigh = iso === proposedWeigh ? null : iso;
   else chosenIntake = iso === proposedIntake ? null : iso;
+  // Typed water follows the date like the typed macros; otherwise show the stored water.
+  if (kind === "intake") syncWater();
   $("saved").hidden = true;
   clearErrors();
   closePicker();
@@ -987,6 +1016,7 @@ $("confirm-cancel").addEventListener("click", () => {
 
 for (const id of ["weight", "protein", "carbs", "fat", "water"]) {
   $(id).addEventListener("input", () => {
+    if (id === "water") waterDirty = true;
     $("saved").hidden = true;
   });
 }

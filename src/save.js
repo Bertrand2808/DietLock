@@ -42,11 +42,22 @@ export function intakeConfirmText(entry) {
   }
   const oldWater = entry.old.water ? `, eau ${entry.old.water} L` : "";
   const nextWater = entry.waterText.trim() ? `, eau ${entry.waterText.trim()} L` : "";
+  const waterReset =
+    entry.old.water && !entry.waterText.trim() ? `L'eau (${entry.old.water} L) passera à 0. ` : "";
   return (
     `Le ${entry.label} a déjà une alimentation : ${entry.old.energy} kcal ` +
     `(P ${entry.old.proteinG} g, G ${entry.old.carbsG} g, L ${entry.old.fatG} g${oldWater}). ` +
+    waterReset +
     `La remplacer par P ${entry.proteinText} g, G ${entry.carbsText} g, L ${entry.fatText} g${nextWater} ?`
   );
+}
+
+/**
+ * Text of the water field once the stored water of the selected day is known (S5).
+ * The field shows the stored water; a value the user typed is never overwritten.
+ */
+export function nextWaterField({ dirty, current, stored }) {
+  return dirty ? current : (stored ?? "");
 }
 
 export async function saveBlocks(fields, saveWeighIn, saveIntake) {

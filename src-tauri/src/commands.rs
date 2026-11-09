@@ -109,12 +109,44 @@ pub fn save_intake(
     let date = Day::parse(&date).map_err(msg)?;
     let date = check_not_future(date, today()?).map_err(msg)?;
     let mut store = lock(&store)?;
+    let texts = [&protein_text, &carbs_text, &fat_text, &water_text];
+    save_intake_texts(&mut store, texts.map(String::as_str), date, replace)
+}
+
+/// Water of the intake stored for `date`, as the text the water field shows
+/// (S5). `None` when the date has no intake or the intake has no water.
+#[tauri::command]
+pub fn intake_water(
+    store: State<'_, Mutex<Store>>,
+    date: String,
+) -> Result<Option<String>, String> {
+    let date = Day::parse(&date).map_err(|e| view::validation_message(&e))?;
+    let store = lock(&store)?;
+    water_field(&store, date)
+}
+
+fn water_field(store: &Store, date: Day) -> Result<Option<String>, String> {
+    let stored = store
+        .get_intake(date)
+        .map_err(|e| view::store_message(&e))?;
+    Ok(stored.and_then(|i| IntakeView::from(&i).water))
+}
+
+/// `texts` are protein, carbs, fat and water as typed.
+fn save_intake_texts(
+    store: &mut Store,
+    texts: [&str; 4],
+    date: Day,
+    replace: bool,
+) -> Result<IntakeSaveOutcome, String> {
+    let msg = |e: dietlock_core::ValidationError| view::validation_message(&e);
+    let [protein_text, carbs_text, fat_text, water_text] = texts;
     let existing = store
         .get_intake(date)
         .map_err(|e| view::store_message(&e))?;
     let blank = |text: &str| text.trim().is_empty();
-    let decision = if blank(&protein_text) && blank(&carbs_text) && blank(&fat_text) {
-        match parse_water_ml(&water_text).map_err(msg)? {
+    let decision = if blank(protein_text) && blank(carbs_text) && blank(fat_text) {
+        match parse_water_ml(water_text).map_err(msg)? {
             None => return Ok(IntakeSaveOutcome::Unchanged),
             Some(ml) => {
                 let Some(old) = existing else {
@@ -125,14 +157,14 @@ pub fn save_intake(
             }
         }
     } else {
-        let protein = parse_macro_tenth_g("protein_tenth_g", &protein_text).map_err(msg)?;
-        let carbs = parse_macro_tenth_g("carbs_tenth_g", &carbs_text).map_err(msg)?;
-        let fat = parse_macro_tenth_g("fat_tenth_g", &fat_text).map_err(msg)?;
-        let water = parse_water_ml(&water_text).map_err(msg)?;
+        let protein = parse_macro_tenth_g("protein_tenth_g", protein_text).map_err(msg)?;
+        let carbs = parse_macro_tenth_g("carbs_tenth_g", carbs_text).map_err(msg)?;
+        let fat = parse_macro_tenth_g("fat_tenth_g", fat_text).map_err(msg)?;
+        let water = parse_water_ml(water_text).map_err(msg)?;
         let next = Intake::new(date, protein, carbs, fat, water).map_err(msg)?;
         decide_intake(existing, next)
     };
-    apply_intake(&mut store, existing, decision, replace)
+    apply_intake(store, existing, decision, replace)
 }
 
 fn apply_intake(
@@ -585,5 +617,116 @@ mod tests {
         assert_eq!(trend(&list(&s), day("2026-10-13")).unwrap(), Some(8250));
         apply_delete(&s, day("2026-10-13"), DeleteBlock::WeighIn, true).unwrap();
         assert_eq!(trend(&list(&s), day("2026-10-13")).unwrap(), None);
+    }
+
+    /// Typed texts: protein, carbs, fat, water.
+    fn save(
+        s: &mut Store,
+        texts: [&str; 4],
+        d: &str,
+        replace: bool,
+    ) -> Result<IntakeSaveOutcome, String> {
+        save_intake_texts(s, texts, day(d), replace)
+    }
+
+    fn stored_water(s: &Store, d: &str) -> Option<u16> {
+        s.get_intake(day(d)).unwrap().unwrap().water_ml()
+    }
+
+    #[test]
+    fn s3_blank_macros_with_the_stored_water_text_write_nothing() {
+        let mut s = filled_store();
+        let out = save(&mut s, ["", "", "", "2"], "2026-10-13", false).unwrap();
+        assert_eq!(out, IntakeSaveOutcome::Unchanged);
+        assert_eq!(stored_water(&s, "2026-10-13"), Some(2000));
+    }
+
+    #[test]
+    fn s3_same_macros_with_the_stored_water_text_writes_nothing() {
+        let mut s = filled_store();
+        let out = save(&mut s, ["150", "200", "70", "2"], "2026-10-13", false).unwrap();
+        assert_eq!(out, IntakeSaveOutcome::Unchanged);
+        assert_eq!(stored_water(&s, "2026-10-13"), Some(2000));
+    }
+
+    #[test]
+    fn s3_changed_macros_with_the_stored_water_text_keep_the_water() {
+        let mut s = filled_store();
+        let out = save(&mut s, ["160", "200", "70", "2"], "2026-10-13", true).unwrap();
+        assert_eq!(out, IntakeSaveOutcome::Saved);
+        assert_eq!(stored_water(&s, "2026-10-13"), Some(2000));
+    }
+
+    #[test]
+    fn s3_clearing_the_water_asks_and_writes_nothing_until_confirmed() {
+        let mut s = filled_store();
+        let out = save(&mut s, ["150", "200", "70", ""], "2026-10-13", false).unwrap();
+        let IntakeSaveOutcome::AlreadyFilled { old } = out else {
+            panic!("expected a confirmation, got {out:?}");
+        };
+        assert_eq!(old.water.as_deref(), Some("2"));
+        assert_eq!(stored_water(&s, "2026-10-13"), Some(2000));
+    }
+
+    #[test]
+    fn s4_partly_blank_macros_are_refused_and_never_fall_back_to_water_only() {
+        for texts in [
+            ["", "200", "70", ""],
+            ["150", "", "70", "1"],
+            ["150", "200", "", "1"],
+        ] {
+            let mut s = filled_store();
+            assert!(
+                save(&mut s, texts, "2026-10-13", true).is_err(),
+                "{texts:?}"
+            );
+            assert_eq!(stored_water(&s, "2026-10-13"), Some(2000), "{texts:?}");
+        }
+    }
+
+    #[test]
+    fn s3_confirmed_clearing_removes_the_water_and_it_stays_after_reopening() {
+        let mut s = filled_store();
+        let out = save(&mut s, ["150", "200", "70", ""], "2026-10-13", true).unwrap();
+        assert_eq!(out, IntakeSaveOutcome::Saved);
+        assert_eq!(stored_water(&s, "2026-10-13"), None);
+        assert_eq!(water_field(&s, day("2026-10-13")).unwrap(), None);
+    }
+
+    #[test]
+    fn s5_the_water_field_shows_the_stored_water_of_a_filled_day() {
+        let s = filled_store();
+        assert_eq!(
+            water_field(&s, day("2026-10-13")).unwrap().as_deref(),
+            Some("2")
+        );
+    }
+
+    #[test]
+    fn s5_the_water_field_is_empty_without_stored_water_or_intake() {
+        let mut s = filled_store();
+        s.save_intake(
+            &Intake::new(day("2026-10-15"), 1500, 2000, 700, None).unwrap(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(water_field(&s, day("2026-10-15")).unwrap(), None);
+        assert_eq!(water_field(&s, day("2026-10-20")).unwrap(), None);
+    }
+
+    #[test]
+    fn s4_a_first_full_entry_saves_the_water_with_the_macros_without_asking() {
+        let mut s = Store::open_in_memory().unwrap();
+        let out = save(&mut s, ["150", "200", "70", "1,5"], "2026-10-16", false).unwrap();
+        assert_eq!(out, IntakeSaveOutcome::Saved);
+        assert_eq!(stored_water(&s, "2026-10-16"), Some(1500));
+    }
+
+    #[test]
+    fn s3_water_alone_on_a_filled_day_still_asks_before_replacing() {
+        let mut s = filled_store();
+        let out = save(&mut s, ["", "", "", "1"], "2026-10-13", false).unwrap();
+        assert!(matches!(out, IntakeSaveOutcome::AlreadyFilled { .. }));
+        assert_eq!(stored_water(&s, "2026-10-13"), Some(2000));
     }
 }
