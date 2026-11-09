@@ -13,6 +13,17 @@ import {
   shiftMonth,
   shortcutState,
 } from "./calendar.js";
+import {
+  ACTIVITY_TYPES,
+  addRow,
+  emptyRow,
+  formKeyAction,
+  removeRow,
+  rowIsEmpty,
+  saveButtonText,
+  saveCount,
+  validateRows,
+} from "./activities.js";
 import { renderChart } from "./chart.js";
 import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { energyCopy } from "./energy.js";
@@ -33,6 +44,8 @@ let filledIntake = [];
 let seenWeighDate = null;
 let seenIntakeDate = null;
 let openKind = null;
+let activityDate = null;
+let activityRows = [];
 let viewYear = 2026;
 let viewMonth = 1;
 let queue = [];
@@ -58,10 +71,24 @@ function errorText(e) {
   return String(e);
 }
 
+function activityDateNow() {
+  return activityDate ?? todayIso;
+}
+
+function dateOf(kind) {
+  if (kind === "weigh") return weighDateNow();
+  return kind === "intake" ? intakeDateNow() : activityDateNow();
+}
+
+function proposedOf(kind) {
+  if (kind === "weigh") return proposedWeigh;
+  return kind === "intake" ? proposedIntake : todayIso;
+}
+
 function paintChip(id, kind) {
   const el = $(id);
-  const date = kind === "weigh" ? weighDateNow() : intakeDateNow();
-  const proposed = kind === "weigh" ? proposedWeigh : proposedIntake;
+  const date = dateOf(kind);
+  const proposed = proposedOf(kind);
   const view = chipView({
     date,
     proposed,
@@ -89,6 +116,7 @@ function paintChip(id, kind) {
 function paintChips() {
   paintChip("weigh-chip", "weigh");
   paintChip("intake-chip", "intake");
+  if (activityDate !== null) paintChip("act-chip", "activity");
 }
 
 function kcalOn(listing, iso) {
@@ -410,6 +438,11 @@ function clearErrors() {
 }
 
 function showBlockError(block, message) {
+  if (block === "activity") {
+    $("act-error").textContent = message;
+    $("act-error").hidden = false;
+    return;
+  }
   const el = $(block === "weigh" ? "weigh-error" : "intake-error");
   el.textContent = message;
   el.hidden = false;
@@ -632,8 +665,10 @@ async function onReplace() {
 }
 
 function renderPop() {
-  const selected = openKind === "weigh" ? weighDateNow() : intakeDateNow();
-  const filled = new Set(openKind === "weigh" ? filledWeigh : filledIntake);
+  const selected = dateOf(openKind);
+  const filled = new Set(
+    { weigh: filledWeigh, intake: filledIntake, activity: [] }[openKind],
+  );
   $("date-pop-title").textContent = monthTitle(viewYear, viewMonth);
   const shortcuts = shortcutState(selected, todayIso);
   $("date-today").classList.toggle("sel", shortcuts.today);
@@ -678,11 +713,13 @@ function syncToday() {
 function openPicker(kind) {
   syncToday();
   openKind = kind;
-  const current = monthOf(kind === "weigh" ? weighDateNow() : intakeDateNow());
+  const current = monthOf(dateOf(kind));
   viewYear = current.year;
   viewMonth = current.month;
-  const host = $(kind === "weigh" ? "weigh-chip" : "intake-chip").parentElement;
+  const chipId = { weigh: "weigh-chip", intake: "intake-chip", activity: "act-chip" }[kind];
+  const host = $(chipId).parentElement;
   host.appendChild($("date-pop"));
+  $("date-pop").classList.toggle("pop-right", kind === "activity");
   $("date-pop").hidden = false;
   renderPop();
   paintChips();
@@ -701,6 +738,12 @@ function togglePicker(kind) {
 }
 
 function selectDay(kind, iso) {
+  if (kind === "activity") {
+    activityDate = iso;
+    clearActivityError();
+    closePicker();
+    return;
+  }
   if (kind === "weigh") chosenWeigh = iso === proposedWeigh ? null : iso;
   else chosenIntake = iso === proposedIntake ? null : iso;
   $("saved").hidden = true;
@@ -712,8 +755,136 @@ function selectDay(kind, iso) {
 // never calls a command and never refreshes the form.
 function rejectFuture(kind, message) {
   closePicker();
-  clearErrors();
+  if (kind === "activity") {
+    clearActivityError();
+  } else {
+    clearErrors();
+  }
   showBlockError(kind, message);
+}
+
+function clearActivityError() {
+  $("act-error").textContent = "";
+  $("act-error").hidden = true;
+}
+
+function paintActivityFooter() {
+  const count = saveCount(activityRows);
+  $("act-save").textContent = saveButtonText(count);
+  $("act-save").disabled = activityRows.every(rowIsEmpty);
+}
+
+function renderActivityRows() {
+  const host = $("act-rows");
+  host.replaceChildren();
+  for (const row of activityRows) {
+    const line = document.createElement("div");
+    line.className = "act-row";
+
+    const wrap = document.createElement("span");
+    wrap.className = "act-type";
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", "Type d'activité");
+    const placeholder = new Option("Type…", "");
+    select.append(placeholder);
+    for (const type of ACTIVITY_TYPES) select.append(new Option(type.label, type.key));
+    select.value = row.type;
+    select.classList.toggle("empty", row.type === "");
+    const chevron = document.createElement("span");
+    chevron.className = "cv";
+    chevron.setAttribute("aria-hidden", "true");
+    chevron.textContent = "▾";
+    wrap.append(select, chevron);
+
+    const note = document.createElement("input");
+    note.type = "text";
+    note.className = "act-note";
+    note.autocomplete = "off";
+    note.placeholder = "note facultative";
+    note.setAttribute("aria-label", "Note");
+    note.value = row.note;
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "act-rm";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", "Retirer cette activité");
+    remove.hidden = rowIsEmpty(row);
+
+    const touched = () => {
+      remove.hidden = rowIsEmpty(row);
+      select.classList.toggle("empty", row.type === "");
+      clearActivityError();
+      paintActivityFooter();
+    };
+    select.addEventListener("change", () => {
+      row.type = select.value;
+      touched();
+    });
+    note.addEventListener("input", () => {
+      row.note = note.value;
+      touched();
+    });
+    remove.addEventListener("click", () => {
+      activityRows = removeRow(activityRows, row.id);
+      clearActivityError();
+      renderActivityRows();
+      $("act-add").focus();
+    });
+
+    line.append(wrap, note, remove);
+    host.append(line);
+  }
+  paintActivityFooter();
+}
+
+function openActivityForm() {
+  if (activityDate !== null) return;
+  closePicker();
+  syncToday();
+  activityDate = todayIso;
+  activityRows = [emptyRow()];
+  clearActivityError();
+  // Nothing behind the form can take focus or a click while it is open.
+  document.querySelector(".titlebar").inert = true;
+  $("screen-today").inert = true;
+  $("screen-weight").inert = true;
+  $("act-overlay").hidden = false;
+  paintChips();
+  renderActivityRows();
+  $("act-rows").querySelector("select")?.focus();
+}
+
+// Esc, Annuler and a successful save all end here. Nothing is saved by closing.
+function closeActivityForm() {
+  if (activityDate === null) return;
+  closePicker();
+  activityDate = null;
+  activityRows = [];
+  $("act-overlay").hidden = true;
+  document.querySelector(".titlebar").inert = false;
+  $("screen-today").inert = false;
+  $("screen-weight").inert = false;
+  $("act-open").focus();
+}
+
+async function saveActivities() {
+  if (busy || activityDate === null) return;
+  const checked = validateRows(activityRows);
+  if (!checked.ok) {
+    showBlockError("activity", checked.error);
+    return;
+  }
+  busy = true;
+  clearActivityError();
+  try {
+    await invoke("save_activities", { date: activityDate, drafts: checked.drafts });
+    closeActivityForm();
+  } catch (e) {
+    showBlockError("activity", errorText(e));
+  } finally {
+    busy = false;
+  }
 }
 
 function onDay(iso) {
@@ -739,6 +910,17 @@ function stepMonth(delta) {
 document.addEventListener(
   "keydown",
   (event) => {
+    if (activityDate !== null) {
+      const action = formKeyAction(event, openKind !== null);
+      if (action === "closePicker") closePicker();
+      else if (action === "close") closeActivityForm();
+      else if (action === "save") saveActivities();
+      // Enter in a field must not submit the form. Enter on a button still presses it.
+      if (action || (event.key === "Enter" && event.target.tagName === "INPUT")) {
+        event.preventDefault();
+      }
+      return;
+    }
     const next = screenShortcut(event, mac);
     if (next) {
       event.preventDefault();
@@ -767,6 +949,16 @@ $("span-seg").addEventListener("click", (event) => {
 });
 $("entry").addEventListener("submit", (event) => event.preventDefault());
 $("save").addEventListener("click", saveAll);
+$("act-open").addEventListener("click", openActivityForm);
+$("act-chip").addEventListener("click", () => togglePicker("activity"));
+$("act-add").addEventListener("click", () => {
+  activityRows = addRow(activityRows);
+  renderActivityRows();
+  $("act-rows").querySelector(".act-row:last-child select")?.focus();
+});
+$("act-cancel").addEventListener("click", closeActivityForm);
+$("act-save").addEventListener("click", saveActivities);
+$("act-modal").addEventListener("submit", (event) => event.preventDefault());
 $("weigh-chip").addEventListener("click", () => togglePicker("weigh"));
 $("intake-chip").addEventListener("click", () => togglePicker("intake"));
 $("date-today").addEventListener("click", () => onDay(todayIso));
