@@ -19,6 +19,20 @@ export function blockStatus(status) {
   return status;
 }
 
+/**
+ * Confirmation for replacing a stored weigh-in (S3). The "à jeun" status is
+ * named whenever it changes, so a flag-only change is not worded as a weight
+ * change (S9, T6).
+ */
+export function weighInConfirmText(entry) {
+  const fastedChanged = entry.fasted !== entry.old.fasted;
+  const status = (fasted) => (fastedChanged ? `, ${fasted ? "à jeun" : "pas à jeun"}` : "");
+  return (
+    `Le ${entry.label} a déjà une pesée : ${entry.old.weight} kg${status(entry.old.fasted)}. ` +
+    `La remplacer par ${entry.weightText} kg${status(entry.fasted)} ?`
+  );
+}
+
 export function intakeConfirmText(entry) {
   const macrosBlank = ["proteinText", "carbsText", "fatText"].every(
     (key) => entry[key].trim() === "",

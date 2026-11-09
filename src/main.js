@@ -17,7 +17,7 @@ import { renderChart } from "./chart.js";
 import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { energyCopy } from "./energy.js";
 import { savesOnEnter, screenShortcut } from "./keys.js";
-import { blockStatus, intakeConfirmText, saveBlocks } from "./save.js";
+import { blockStatus, intakeConfirmText, saveBlocks, weighInConfirmText } from "./save.js";
 
 const { invoke } = window.__TAURI__.core;
 const $ = (id) => document.getElementById(id);
@@ -469,9 +469,12 @@ async function commitWeigh(entry, replace) {
       queue.push({
         kind: "weigh",
         entry,
-        text:
-          `Le ${entry.label} a déjà une pesée : ${outcome.old.weight} kg. ` +
-          `La remplacer par ${entry.weightText} kg ?`,
+        text: weighInConfirmText({
+          label: entry.label,
+          weightText: entry.weightText,
+          fasted: entry.fasted,
+          old: outcome.old,
+        }),
       });
     }
     return status;

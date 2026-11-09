@@ -13,6 +13,10 @@ All notable changes to DietLock are listed here. Format based on [Keep a Changel
 - The top of Aujourd'hui is two labeled columns: the fasted trend, and the energy mean with a signed pill against the previous week. No previous week hides the pill. No weigh-in, and no mean, each show a sentence instead of a number. The weight-curve header is centered again.
 - A weigh-in or an intake can be deleted from the history after confirmation. The confirmation shows the date and the values. Macros and water go together. The trend and alerts are recalculated (S10, T5).
 
+### Fixed
+
+- Unchecking "à jeun" on a saved weigh-in now asks a confirmation that names the fasted status and shows the stored and the new one, instead of talking only about kilograms (S3, S9).
+
 ## [0.2.0] - 2026-11-05
 
 ### Added
