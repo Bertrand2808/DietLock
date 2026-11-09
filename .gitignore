@@ -5,3 +5,5 @@ docs
 
 /.claude/retros/
 .DS_Store
+/.explain/
+/.knowledge/
