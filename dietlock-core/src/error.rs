@@ -16,6 +16,12 @@ pub enum ValidationError {
     InvalidNumber { field: &'static str, input: String },
     /// Date later than the current day.
     FutureDate(String),
+    /// An activity row has a note but no type.
+    MissingActivityType,
+    /// Activity type outside the known list.
+    UnknownActivityType(String),
+    /// An activity form with no typed row.
+    NoActivity,
 }
 
 impl fmt::Display for ValidationError {
@@ -32,6 +38,9 @@ impl fmt::Display for ValidationError {
                 write!(f, "{field}: invalid number {input:?}")
             }
             Self::FutureDate(d) => write!(f, "date {d} is in the future"),
+            Self::MissingActivityType => write!(f, "activity without a type"),
+            Self::UnknownActivityType(k) => write!(f, "unknown activity type {k:?}"),
+            Self::NoActivity => write!(f, "no activity to save"),
         }
     }
 }
