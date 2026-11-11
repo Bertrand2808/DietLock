@@ -16,6 +16,9 @@
           Poids
         </button>
       </div>
+      <button type="button" id="act-open" class="act-open" aria-haspopup="dialog">
+        <span class="plus" aria-hidden="true">＋</span>Activité
+      </button>
     </header>
     <main class="col" id="screen-today">
       <header class="head">
@@ -192,5 +195,32 @@
         </div>
       </section>
     </main>
+
+    <div class="overlay" id="act-overlay" hidden>
+      <form class="modal" id="act-modal" role="dialog" aria-modal="true" aria-labelledby="act-title" novalidate>
+        <div class="modal-head">
+          <h2 id="act-title">Activités du jour</h2>
+          <div class="act-when">
+            <button
+              type="button"
+              class="chip pick"
+              id="act-chip"
+              tabindex="-1"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-label="Date des activités"
+            ></button>
+          </div>
+        </div>
+        <div class="act-rows" id="act-rows"></div>
+        <button type="button" class="act-add" id="act-add">＋ Ajouter une ligne</button>
+        <p class="msg" id="act-error" role="alert" hidden></p>
+        <div class="modal-foot">
+          <p class="hint"><kbd>Esc</kbd> fermer sans enregistrer</p>
+          <button type="button" class="ghost" id="act-cancel">Annuler</button>
+          <button type="button" class="primary" id="act-save"></button>
+        </div>
+      </form>
+    </div>
   </body>
 </html>

@@ -2,9 +2,10 @@
 //! Pure functions, so they are unit-tested without a running app.
 
 use dietlock_core::{
-    Day, DuplicateDate, DuplicateIntakeDate, ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX,
-    ProposedIntake, TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN,
-    WeighIn, alert, display_tenth_kg, energy_kcal, energy_week, trend, variation,
+    ACTIVITY_NOTE_MAX_CHARS, ActivityDraft, Day, DuplicateDate, DuplicateIntakeDate,
+    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, ProposedIntake, TREND_WINDOW_DAYS,
+    ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert, display_tenth_kg,
+    energy_kcal, energy_week, trend, variation,
 };
 use dietlock_store::StoreError;
 use serde::{Deserialize, Serialize};
@@ -107,6 +108,33 @@ pub enum IntakeSaveOutcome {
     AlreadyFilled {
         old: IntakeView,
     },
+}
+
+/// One row of the activity form, as the web view sends it. A missing or empty
+/// `kind` is a row without a type.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityDraftInput {
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub note: String,
+}
+
+impl From<ActivityDraftInput> for ActivityDraft {
+    fn from(d: ActivityDraftInput) -> Self {
+        Self {
+            kind: d.kind,
+            note: d.note,
+        }
+    }
+}
+
+/// Result of `save_activities`: how many activities were added.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivitySaved {
+    pub count: usize,
 }
 
 /// The block of a day that a deletion targets (S10). Macros and water go together.
@@ -583,6 +611,15 @@ pub fn validation_message(e: &ValidationError) -> String {
             let label = Day::parse(d).map(french_date).unwrap_or_else(|_| d.clone());
             format!("{label} est dans le futur, choisis aujourd'hui ou avant.")
         }
+        ValidationError::MissingActivityType => "Choisis un type pour chaque activité.".to_owned(),
+        ValidationError::NoActivity => "Choisis au moins un type d'activité.".to_owned(),
+        ValidationError::UnknownActivityType(kind) => {
+            format!("Le type d'activité {kind:?} n'existe pas.")
+        }
+        ValidationError::OutOfRange {
+            field: "activity_note",
+            ..
+        } => format!("La note doit faire au plus {ACTIVITY_NOTE_MAX_CHARS} caractères."),
         ValidationError::InvalidDate(d) => format!("La date {d:?} n'est pas valide."),
         other => format!("La saisie n'est pas acceptée ({other})."),
     }
@@ -795,6 +832,45 @@ mod tests {
             validation_message(&parse_macro_tenth_g("fat_tenth_g", "").unwrap_err()),
             "Les lipides sont obligatoires."
         );
+    }
+
+    #[test]
+    fn ac4_activity_refusals_are_written_in_french() {
+        use dietlock_core::{Activity, ActivityKind, build_activities};
+        let today = day("2026-11-09");
+        let refusal = |drafts: &[ActivityDraft]| {
+            validation_message(&build_activities(today, today, drafts).unwrap_err())
+        };
+        let draft = |kind: Option<&str>, note: &str| ActivityDraft {
+            kind: kind.map(str::to_owned),
+            note: note.to_owned(),
+        };
+        assert_eq!(refusal(&[]), "Choisis au moins un type d'activité.");
+        assert_eq!(
+            refusal(&[draft(None, "x")]),
+            "Choisis un type pour chaque activité."
+        );
+        assert_eq!(
+            refusal(&[draft(Some("swim"), "")]),
+            "Le type d'activité \"swim\" n'existe pas."
+        );
+        let long = "x".repeat(usize::from(ACTIVITY_NOTE_MAX_CHARS) + 1);
+        assert_eq!(
+            validation_message(&Activity::new(today, ActivityKind::Run, &long).unwrap_err()),
+            "La note doit faire au plus 200 caractères."
+        );
+    }
+
+    #[test]
+    fn ac3_the_web_view_sends_rows_with_an_optional_type() {
+        let drafts: Vec<ActivityDraftInput> =
+            serde_json::from_str(r#"[{"kind":"walk","note":"x"},{"kind":null,"note":""},{}]"#)
+                .unwrap();
+        let drafts: Vec<ActivityDraft> = drafts.into_iter().map(ActivityDraft::from).collect();
+        assert_eq!(drafts[0].kind.as_deref(), Some("walk"));
+        assert_eq!(drafts[0].note, "x");
+        assert_eq!(drafts[1].kind, None);
+        assert_eq!(drafts[2].note, "");
     }
 
     #[test]

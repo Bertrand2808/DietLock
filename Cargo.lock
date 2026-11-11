@@ -574,6 +574,7 @@ dependencies = [
  "dietlock-core",
  "dietlock-store",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "time",

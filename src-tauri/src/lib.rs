@@ -27,7 +27,8 @@ pub fn run() {
             commands::proposed_intake_date,
             commands::list_days,
             commands::weight_curve,
-            commands::delete_entry
+            commands::delete_entry,
+            commands::save_activities
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

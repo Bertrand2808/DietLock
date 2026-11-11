@@ -1,9 +1,10 @@
+use dietlock_core::{ACTIVITY_NOTE_MAX_CHARS, ActivityKind};
 use rusqlite::Connection;
 
 use crate::error::StoreError;
 
 /// Schema version, stored in `PRAGMA user_version`.
-pub const SCHEMA_VERSION: i32 = 2;
+pub const SCHEMA_VERSION: i32 = 3;
 
 const WEIGH_IN_TABLE: &str = "
 CREATE TABLE weigh_in (
@@ -26,31 +27,58 @@ fn intake_table(name: &str) -> String {
     )
 }
 
-/// Creates v2 when the database is empty, scales a v1 file, and refuses
-/// any version this application does not know.
+/// v3 activity table: any number of rows per date, ordered by `id`.
+/// The CHECK on `kind` lists the `dietlock-core` types, and the note limit
+/// is `ACTIVITY_NOTE_MAX_CHARS`.
+fn activity_table() -> String {
+    let kinds = ActivityKind::ALL
+        .iter()
+        .map(|kind| format!("'{}'", kind.key()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "CREATE TABLE activity (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT    NOT NULL CHECK (date(date) IS date),
+    kind TEXT    NOT NULL CHECK (kind IN ({kinds})),
+    note TEXT    CHECK (note IS NULL OR length(note) BETWEEN 1 AND {ACTIVITY_NOTE_MAX_CHARS})
+) STRICT;
+CREATE INDEX activity_date ON activity (date);"
+    )
+}
+
+/// Creates v3 when the database is empty, upgrades a v1 or v2 file, and
+/// refuses any version this application does not know.
 pub(crate) fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
     let tx = conn.transaction()?;
     let version: i32 = tx.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     match version {
         0 => {
             let sql = format!(
-                "{WEIGH_IN_TABLE}{}PRAGMA user_version = 2;",
-                intake_table("intake")
+                "{WEIGH_IN_TABLE}{}{}PRAGMA user_version = {SCHEMA_VERSION};",
+                intake_table("intake"),
+                activity_table()
             );
             tx.execute_batch(&sql)?;
         }
-        1 => {
-            // v1 stored whole grams. Multiply by 10 so the same amount is tenths of a gram.
-            let sql = format!(
-                "{}
+        1 | 2 => {
+            if version == 1 {
+                // v1 stored whole grams. Multiply by 10 so the same amount is tenths of a gram.
+                let sql = format!(
+                    "{}
 INSERT INTO intake_v2 (date, protein_tenth_g, carbs_tenth_g, fat_tenth_g, water_ml)
 SELECT date, protein_g * 10, carbs_g * 10, fat_g * 10, water_ml FROM intake;
 DROP TABLE intake;
-ALTER TABLE intake_v2 RENAME TO intake;
-PRAGMA user_version = 2;",
-                intake_table("intake_v2")
-            );
-            tx.execute_batch(&sql)?;
+ALTER TABLE intake_v2 RENAME TO intake;",
+                    intake_table("intake_v2")
+                );
+                tx.execute_batch(&sql)?;
+            }
+            // v3 adds the activity table. The other tables are untouched.
+            tx.execute_batch(&format!(
+                "{}PRAGMA user_version = {SCHEMA_VERSION};",
+                activity_table()
+            ))?;
         }
         SCHEMA_VERSION => {}
         v => return Err(StoreError::UnsupportedSchemaVersion(v)),
@@ -185,7 +213,12 @@ mod tests {
                 .conn()
                 .query_row("PRAGMA user_version", [], |r| r.get(0))
                 .unwrap();
-            assert_eq!(version, 2);
+            assert_eq!(version, SCHEMA_VERSION);
+            let activity_rows: i64 = s
+                .conn()
+                .query_row("SELECT COUNT(*) FROM activity", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(activity_rows, 0);
             let i = s.get_intake(day("2026-10-12")).unwrap().unwrap();
             assert_eq!(i.protein_tenth_g(), 1500);
             assert_eq!(i.carbs_tenth_g(), 0);
@@ -211,10 +244,108 @@ mod tests {
     #[test]
     fn newer_schema_is_refused() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("PRAGMA user_version = 3").unwrap();
+        conn.execute_batch("PRAGMA user_version = 4").unwrap();
         assert!(matches!(
             Store::init(conn),
-            Err(StoreError::UnsupportedSchemaVersion(3))
+            Err(StoreError::UnsupportedSchemaVersion(4))
         ));
+    }
+
+    #[test]
+    fn a_fresh_database_is_created_at_the_current_version() {
+        let s = store();
+        let version: i32 = s
+            .conn()
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 3);
+        assert_eq!(SCHEMA_VERSION, 3);
+    }
+
+    #[test]
+    fn v2_file_gains_the_activity_table_and_keeps_its_data() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(&format!(
+            "{WEIGH_IN_TABLE}{}PRAGMA user_version = 2;
+             INSERT INTO weigh_in VALUES ('2026-11-08', 826, 1);
+             INSERT INTO intake VALUES ('2026-11-08', 1500, 2000, 700, NULL);",
+            intake_table("intake")
+        ))
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let s = Store::init(conn).unwrap();
+        let version: i32 = s
+            .conn()
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+        assert_eq!(
+            s.get_weigh_in(day("2026-11-08")).unwrap(),
+            Some(weigh("2026-11-08", 826, true))
+        );
+        assert_eq!(
+            s.get_intake(day("2026-11-08")).unwrap(),
+            Some(intake("2026-11-08", None))
+        );
+        s.conn()
+            .execute(
+                "INSERT INTO activity (date, kind) VALUES ('2026-11-08', 'walk')",
+                [],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn migrating_twice_changes_nothing() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn).unwrap();
+        conn.execute(
+            "INSERT INTO activity (date, kind) VALUES ('2026-11-08', 'walk')",
+            [],
+        )
+        .unwrap();
+        migrate(&mut conn).unwrap();
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM activity", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 1);
+    }
+
+    #[test]
+    fn activity_check_constraints_mirror_the_core_limits() {
+        let s = store();
+        let insert = |date: &str, kind: &str, note: &str| {
+            let note = if note == "NULL" {
+                note.to_owned()
+            } else {
+                format!("'{note}'")
+            };
+            format!("INSERT INTO activity (date, kind, note) VALUES ('{date}', '{kind}', {note})")
+        };
+        for kind in ActivityKind::ALL {
+            s.conn()
+                .execute(&insert("2026-11-09", kind.key(), "NULL"), [])
+                .unwrap();
+        }
+        sql_refused(&s, &insert("2026-11-09", "swim", "NULL"));
+        sql_refused(&s, &insert("2026-11-09", "Walk", "NULL"));
+        sql_refused(&s, &insert("2026-11-09", "", "NULL"));
+        for bad in ["2027-02-29", "2026-04-31", "2026-11-9"] {
+            sql_refused(&s, &insert(bad, "walk", "NULL"));
+        }
+        sql_refused(&s, &insert("2026-11-09", "walk", ""));
+        let max = usize::from(ACTIVITY_NOTE_MAX_CHARS);
+        s.conn()
+            .execute(&insert("2026-11-09", "walk", &"é".repeat(max)), [])
+            .unwrap();
+        sql_refused(&s, &insert("2026-11-09", "walk", &"é".repeat(max + 1)));
+        assert!(
+            s.conn()
+                .execute(
+                    "INSERT INTO activity (date, kind, note) VALUES (NULL, 'walk', NULL)",
+                    []
+                )
+                .is_err()
+        );
     }
 }

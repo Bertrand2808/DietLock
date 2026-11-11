@@ -1,8 +1,10 @@
-//! SQLite persistence for DietLock: weigh-ins and intakes, one row per day.
+//! SQLite persistence for DietLock: weigh-ins and intakes, one row per day,
+//! and activities, any number per day.
 //!
 //! Ranges are checked twice: by the `dietlock-core` types and by
 //! `CHECK` constraints in the database.
 
+mod activity;
 mod error;
 mod intake;
 mod schema;
@@ -10,7 +12,7 @@ mod weigh_in;
 
 use std::path::Path;
 
-use dietlock_core::{Day, Intake, WeighIn};
+use dietlock_core::{Activity, Day, Intake, WeighIn};
 use rusqlite::Connection;
 
 pub use error::{SaveError, StoreError};
@@ -86,6 +88,20 @@ impl Store {
     /// Deletes the day's intake; no-op if there is none.
     pub fn delete_intake(&self, date: Day) -> Result<(), StoreError> {
         intake::delete_intake(&self.conn, date)
+    }
+
+    /// Appends activities in one transaction: all are saved or none.
+    /// Activities already stored for the same dates stay.
+    pub fn add_activities(&mut self, activities: &[Activity]) -> Result<(), StoreError> {
+        let tx = self.conn.transaction()?;
+        activity::add_activities(&tx, activities)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Activities from `from` to `to` inclusive, by date then by order of entry.
+    pub fn list_activities(&self, from: Day, to: Day) -> Result<Vec<Activity>, StoreError> {
+        activity::list_activities(&self.conn, from, to)
     }
 }
 

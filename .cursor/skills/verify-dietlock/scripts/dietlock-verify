@@ -26,7 +26,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[4]
 BINARY = REPO / "target" / "debug" / "dietlock"
 APP_ID = "com.bertrand2808.dietlock"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 WINDOW = (1080, 700)
 INSTANCE_ROOT = Path("/tmp/dietlock-verify")
 EVIDENCE_ROOT = Path("/tmp/dietlock-verify-evidence")
@@ -513,7 +513,21 @@ def cmd_db(_args: list[str]) -> int:
     print(f"intake {len(intake)}")
     for row in intake:
         print("intake " + " ".join(str(part) for part in row))
+    activity = activity_rows(state)
+    print(f"activity {len(activity)}")
+    for row in activity:
+        print("activity " + " ".join(str(part) for part in row))
     return 0
+
+
+def activity_rows(state: dict) -> list[tuple]:
+    con = sqlite3.connect(f"file:{state['db']}?mode=ro", uri=True, timeout=2)
+    try:
+        return con.execute(
+            "SELECT date, kind, COALESCE(note, '') FROM activity ORDER BY date, id"
+        ).fetchall()
+    finally:
+        con.close()
 
 
 def window_geometry(state: dict) -> tuple[int, int, str]:
