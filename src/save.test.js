@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blockStatus, intakeConfirmText, saveBlocks } from "./save.js";
+import { blockStatus, intakeConfirmText, saveBlocks, weighInConfirmText } from "./save.js";
 
 const filled = {
   weight: "78,2",
@@ -114,4 +114,69 @@ test("water alone still attempts the intake block", async () => {
     async () => "error",
   );
   assert.deepEqual(out, { weighIn: "skipped", intake: "error" });
+});
+
+// S3, S9, T6: the confirmation names what changes.
+const oldWeigh = { weight: "82,6", fasted: true };
+
+test("s3 weight-only change keeps the kg confirmation", () => {
+  const text = weighInConfirmText({
+    label: "mar. 3 nov.",
+    weightText: "83,1",
+    fasted: true,
+    old: oldWeigh,
+  });
+  assert.equal(text, "Le mar. 3 nov. a déjà une pesée : 82,6 kg. La remplacer par 83,1 kg ?");
+});
+
+test("s3 unchecking fasted at the same weight names the fasted status", () => {
+  const text = weighInConfirmText({
+    label: "mar. 3 nov.",
+    weightText: "82,6",
+    fasted: false,
+    old: oldWeigh,
+  });
+  assert.equal(
+    text,
+    "Le mar. 3 nov. a déjà une pesée : 82,6 kg, à jeun. La remplacer par 82,6 kg, pas à jeun ?",
+  );
+});
+
+test("s3 the typed weight is shown as typed beside the fasted status", () => {
+  const text = weighInConfirmText({
+    label: "mar. 3 nov.",
+    weightText: "82.60",
+    fasted: false,
+    old: oldWeigh,
+  });
+  assert.equal(
+    text,
+    "Le mar. 3 nov. a déjà une pesée : 82,6 kg, à jeun. La remplacer par 82.60 kg, pas à jeun ?",
+  );
+});
+
+test("s3 changing weight and fasted together names both", () => {
+  const text = weighInConfirmText({
+    label: "mar. 3 nov.",
+    weightText: "83,1",
+    fasted: false,
+    old: oldWeigh,
+  });
+  assert.equal(
+    text,
+    "Le mar. 3 nov. a déjà une pesée : 82,6 kg, à jeun. La remplacer par 83,1 kg, pas à jeun ?",
+  );
+});
+
+test("s3 checking fasted again says à jeun on the new value", () => {
+  const text = weighInConfirmText({
+    label: "mar. 3 nov.",
+    weightText: "82,6",
+    fasted: true,
+    old: { weight: "82,6", fasted: false },
+  });
+  assert.equal(
+    text,
+    "Le mar. 3 nov. a déjà une pesée : 82,6 kg, pas à jeun. La remplacer par 82,6 kg, à jeun ?",
+  );
 });
