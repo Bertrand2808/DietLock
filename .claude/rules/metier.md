@@ -24,9 +24,9 @@ A day receives two independent inputs, and no existing data is replaced without 
 
 - **S1 · Two independent inputs.** The Weigh-in and the Intake are saved separately. Either can exist without the other.
 - **S2 · Uniqueness.** A date holds at most one Weigh-in and one Intake.
-- **S3 · Confirmed replacement.** Replacing a Weigh-in, the Macros, or water that was already entered requires confirmation. The old value is shown next to the new one. Submitting the same value writes nothing and asks nothing. Water added to an Intake that has none is written without confirmation and leaves the Macros in place. Macros left blank do not replace stored Macros.
+- **S3 · Confirmed replacement.** Replacing a Weigh-in, the Macros, or water that was already entered requires confirmation. The old value is shown next to the new one. Submitting the same value writes nothing and asks nothing. Water added to an Intake that has none is written without confirmation and leaves the Macros in place. Macros left blank do not replace stored Macros. Clearing the water of an Intake that has water removes it, and the confirmation says that the water goes to 0. This needs the Macros typed: a cleared water field with blank Macros changes nothing.
 - **S4 · Complete macros.** Protein, carbohydrate and fat are required together. Water is optional.
-- **S5 · No pre-fill.** No field is pre-filled. The values of the last Intake appear greyed out in empty fields, as a hint only. An empty field is never saved (S4).
+- **S5 · No pre-fill.** No field is pre-filled, with one exception: the water field shows the water already stored for the selected Intake date, so that leaving it as it is keeps that water (S3). The values of the last Intake appear greyed out in empty fields, as a hint only. An empty field is never saved (S4).
 - **S6 · Formats.** Weight in kg with one decimal. Macros in grams with at most one decimal. Water in litres with at most two decimals. Comma and point are both accepted as decimal separator.
 - **S7 · Valid ranges.** Weight from 30 to 250 kg. Protein, carbohydrate and fat from 0 to 1,000 g each. Water from 0 to 10 L. An out-of-range value is refused with a message stating the expected range.
 - **S8 · Computed energy.** Energy = 4 × protein + 4 × carbohydrate + 9 × fat, rounded half away from zero to a whole kcal. It is never entered.

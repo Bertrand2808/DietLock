@@ -24,6 +24,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::save_weigh_in,
             commands::save_intake,
+            commands::intake_water,
             commands::proposed_intake_date,
             commands::list_days,
             commands::weight_curve,

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blockStatus, intakeConfirmText, saveBlocks, weighInConfirmText } from "./save.js";
+import {
+  blockStatus,
+  intakeConfirmText,
+  nextWaterField,
+  saveBlocks,
+  weighInConfirmText,
+} from "./save.js";
 
 const filled = {
   weight: "78,2",
@@ -179,4 +185,48 @@ test("s3 checking fasted again says à jeun on the new value", () => {
     text,
     "Le mar. 3 nov. a déjà une pesée : 82,6 kg, pas à jeun. La remplacer par 82,6 kg, à jeun ?",
   );
+});
+
+const storedIntake = {
+  energy: "2 190",
+  proteinG: "146",
+  carbsG: "190",
+  fatG: "94",
+  water: "1,5",
+};
+
+const typed = { label: "mar. 3 nov.", proteinText: "146", carbsText: "190", fatText: "94" };
+
+test("S3: clearing the water on a filled day says the water goes to 0", () => {
+  const text = intakeConfirmText({ ...typed, waterText: "  ", old: storedIntake });
+  assert.equal(
+    text,
+    "Le mar. 3 nov. a déjà une alimentation : 2 190 kcal " +
+      "(P 146 g, G 190 g, L 94 g, eau 1,5 L). " +
+      "L'eau (1,5 L) passera à 0. La remplacer par P 146 g, G 190 g, L 94 g ?",
+  );
+});
+
+test("S3: no water warning when the stored intake has no water", () => {
+  const text = intakeConfirmText({
+    ...typed,
+    proteinText: "150",
+    waterText: "",
+    old: { ...storedIntake, water: null },
+  });
+  assert.ok(!text.includes("passera à 0"));
+});
+
+test("S3: no water warning when the water is kept or replaced", () => {
+  for (const waterText of ["1,5", "2"]) {
+    const text = intakeConfirmText({ ...typed, proteinText: "150", waterText, old: storedIntake });
+    assert.ok(!text.includes("passera à 0"), waterText);
+  }
+});
+
+test("S5: the water field follows the stored water until the user types in it", () => {
+  assert.equal(nextWaterField({ dirty: false, current: "", stored: "1,5" }), "1,5");
+  assert.equal(nextWaterField({ dirty: false, current: "2", stored: null }), "");
+  assert.equal(nextWaterField({ dirty: true, current: "2", stored: "1,5" }), "2");
+  assert.equal(nextWaterField({ dirty: true, current: "", stored: "1,5" }), "");
 });
