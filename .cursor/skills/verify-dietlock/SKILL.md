@@ -5,7 +5,7 @@ description: "Drive the DietLock Tauri app on a Linux VM and prove a screen or a
 
 # Verify DietLock
 
-DietLock is a desktop app (Tauri + Rust) with two screens in one window: `Aujourd'hui` (the entry card and the history) and `Poids` (the weight curve). The tabs are `#tab-today` and `#tab-weight`. The release install target is macOS; this skill proves the same shell on a Linux cloud VM.
+DietLock is a desktop app (Tauri + Rust) with two screens in one window: `Aujourd'hui` (the entry card and the history) and `Graphiques` (the weight curve). The tabs are `#tab-today` and `#tab-weight`. The release install target is macOS; this skill proves the same shell on a Linux cloud VM.
 
 The harness is `.cursor/skills/verify-dietlock/scripts/dietlock-verify`. Run it from anywhere. It finds the repo as the parent of `.cursor`.
 
@@ -72,7 +72,7 @@ Stable handles, from `src/index.html`:
 | Handle | What the user sees |
 | --- | --- |
 | `#tab-today` `#screen-today` | L'onglet `Aujourd'hui`. Selected on launch. |
-| `#tab-weight` `#screen-weight` | L'onglet `Poids`. Hidden until chosen. |
+| `#tab-weight` `#screen-weight` | L'onglet `Graphiques`. Hidden until chosen. |
 | `#headline` `#subhead` | Left column. Trend weight plus `kg`, then `moyenne à jeun, 7 derniers jours`. With no weigh-in, `#headline` is `Pas encore de pesée.` |
 | `#weigh-chip` `#weight` `#fasted` | Date de la pesée, weight in kg, `à jeun` checked by default. The chip's `data-date` is `YYYY-MM-DD`. |
 | `#intake-chip` `#protein` `#carbs` `#fat` `#water` `#forgot` | Date de l'alimentation, P / G / L / Eau. On an empty store the chip is yesterday. `#forgot` shows `hier oublié` from 04:00. |
@@ -82,7 +82,7 @@ Stable handles, from `src/index.html`:
 | `#hist` | Empty sentence, or `30 derniers jours` and one `.day` row per filled day. |
 | `#w-headline` `#w-sub` `#w-range` `#w-count` `#chartbox` | Weight screen. Empty copy is `Pas encore de courbe.` |
 
-Open `Poids` the way the user does:
+Open `Graphiques` the way the user does:
 
 ```bash
 .cursor/skills/verify-dietlock/scripts/dietlock-verify eval 'document.getElementById("tab-weight").click(); "opened"'
@@ -102,7 +102,7 @@ An empty weight field does not save a weigh-in. An empty macro row does not save
 
 Proof files go to `/tmp/dietlock-verify-evidence/<run-id>/`. Put that path, or the picture itself, in the PR body.
 
-- Screenshot of the DietLock window (not the whole X root): `dietlock-verify screenshot` or the PNG written by `check-today`. The window is 1080×700. `check-today` captures `Aujourd'hui` before it opens `Poids`.
+- Screenshot of the DietLock window (not the whole X root): `dietlock-verify screenshot` or the PNG written by `check-today`. The window is 1080×700. `check-today` captures `Aujourd'hui` before it opens `Graphiques`.
 - DOM text beside it: `today.dom.txt`, `today.dom.json`, and `weight.dom.json`.
 - Side effect: `dietlock-verify db` (zero rows on the landing check).
 - Rust proof: `dietlock-verify cargo-test` or `dietlock-verify cargo-test -- -p dietlock-core`. The script writes `cargo-test.txt`.
@@ -114,7 +114,7 @@ Landing check, on a fresh launch:
 .cursor/skills/verify-dietlock/scripts/dietlock-verify check-today
 ```
 
-It exits 0 only when `Aujourd'hui` shows `Pas encore de pesée.` in the left column and `Pas de moyenne sur 7 jours.` in the right column, the weigh-in chip on today, the intake chip on yesterday (with `hier oublié` from 04:00, hidden before that), the empty history sentence, no errors, schema 3 with no rows, a 1080×700 PNG whose OCR sees `Pas encore`, `première journée`, `Aujourd`, and `Poids`, and, after the `Poids` tab is opened, `Pas encore de courbe.`, `15 derniers jours`, and `aucune pesée`. A blank capture fails the OCR lines.
+It exits 0 only when `Aujourd'hui` shows `Pas encore de pesée.` in the left column and `Pas de moyenne sur 7 jours.` in the right column, the weigh-in chip on today, the intake chip on yesterday (with `hier oublié` from 04:00, hidden before that), the empty history sentence, no errors, schema 3 with no rows, a 1080×700 PNG whose OCR sees `Pas encore`, `première journée`, `Aujourd`, and `Graphiques`, and, after the `Graphiques` tab is opened, `Pas encore de courbe.`, `15 derniers jours`, and `aucune pesée`. A blank capture fails the OCR lines.
 
 Capture the action and the resulting state for any other journey: the command you ran, the history row or the confirmation text after it, and `db`. Do not mock the store.
 

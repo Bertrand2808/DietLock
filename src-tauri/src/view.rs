@@ -3,9 +3,9 @@
 
 use dietlock_core::{
     ACTIVITY_NOTE_MAX_CHARS, ActivityDraft, Day, DuplicateDate, DuplicateIntakeDate,
-    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, ProposedIntake, TREND_WINDOW_DAYS,
-    ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert, display_tenth_kg,
-    energy_kcal, energy_week, trend, variation,
+    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroWeek, ProposedIntake,
+    TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert,
+    display_tenth_kg, energy_kcal, energy_week, protein_week, trend, variation,
 };
 use dietlock_store::StoreError;
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,11 @@ const _: () = assert!(HISTORY_DAYS > ENERGY_WEEK_DAYS * 2);
 /// bound of the calendar.
 pub fn history_start(today: Day) -> Day {
     today.minus_days(HISTORY_DAYS - 1).unwrap_or(today)
+}
+
+/// First day the macro summary reads: the start of the previous week, J−14.
+pub fn macro_summary_start(today: Day) -> Day {
+    today.minus_days(ENERGY_WEEK_DAYS * 2).unwrap_or(today)
 }
 
 /// Tenths of a kg written with a decimal comma, e.g. `82,6`.
@@ -251,6 +256,49 @@ impl From<Option<EnergyWeek>> for EnergyWeekView {
                 gap_kcal: week.gap_kcal(),
             },
         }
+    }
+}
+
+/// One macro over the week ending yesterday, as the screen receives it.
+/// `Absent` is not a mean of 0 g. A `gap_g` of `None` is not a gap of 0.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum MacroWeekView {
+    Absent,
+    #[serde(rename_all = "camelCase")]
+    Present {
+        mean_g: u32,
+        days: u32,
+        gap_g: Option<i32>,
+    },
+}
+
+impl From<Option<MacroWeek>> for MacroWeekView {
+    fn from(week: Option<MacroWeek>) -> Self {
+        match week {
+            None => Self::Absent,
+            Some(week) => Self::Present {
+                mean_g: week.mean_g(),
+                days: week.days(),
+                gap_g: week.gap_g(),
+            },
+        }
+    }
+}
+
+/// Macro summaries of the « Graphiques » screen. M1–M4.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroSummary {
+    pub protein: MacroWeekView,
+}
+
+impl MacroSummary {
+    /// `Err` when two intakes share a date (S2).
+    pub fn new(today: Day, intakes: &[Intake]) -> Result<Self, DuplicateIntakeDate> {
+        Ok(Self {
+            protein: MacroWeekView::from(protein_week(intakes, today)?),
+        })
     }
 }
 
@@ -991,6 +1039,56 @@ mod tests {
                 gap_kcal: Some(200),
             }
         );
+    }
+
+    #[test]
+    fn m1_summary_reads_intakes_from_the_start_of_the_previous_week() {
+        // Previous week is J−14 to J−8, so the first day read is J−14.
+        assert_eq!(macro_summary_start(day("2026-11-09")), day("2026-10-26"));
+        assert_eq!(macro_summary_start(day("2026-03-01")), day("2026-02-15"));
+    }
+
+    #[test]
+    fn m3_summary_without_intake_in_the_window_is_absent_not_zero() {
+        let today_only = macros("2026-11-09", 1500, 0, 0, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[today_only]).unwrap();
+        assert_eq!(summary.protein, MacroWeekView::Absent);
+    }
+
+    #[test]
+    fn m2_summary_counts_a_zero_gram_day_and_keeps_the_gap_optional() {
+        let zero = macros("2026-11-08", 0, 0, 0, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[zero]).unwrap();
+        assert_eq!(
+            summary.protein,
+            MacroWeekView::Present {
+                mean_g: 0,
+                days: 1,
+                gap_g: None,
+            }
+        );
+    }
+
+    #[test]
+    fn m4_summary_reads_protein_and_compares_with_the_previous_week() {
+        let current = macros("2026-11-08", 1420, 3000, 800, None);
+        let earlier = macros("2026-11-01", 1300, 100, 100, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[current, earlier]).unwrap();
+        assert_eq!(
+            summary.protein,
+            MacroWeekView::Present {
+                mean_g: 142,
+                days: 1,
+                gap_g: Some(12),
+            }
+        );
+    }
+
+    #[test]
+    fn s2_summary_with_two_intakes_on_one_date_is_an_error() {
+        let first = macros("2026-11-08", 1000, 0, 0, None);
+        let second = macros("2026-11-08", 2000, 0, 0, None);
+        assert!(MacroSummary::new(day("2026-11-09"), &[first, second]).is_err());
     }
 
     fn macros(d: &str, protein: u16, carbs: u16, fat: u16, water: Option<u16>) -> Intake {

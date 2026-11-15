@@ -15,7 +15,7 @@ use tauri::State;
 
 use crate::view::{
     self, ActivityDraftInput, ActivitySaved, DeleteBlock, DeleteOutcome, DeleteTarget,
-    IntakeSaveOutcome, IntakeView, Listing, SaveOutcome, WeighInView, WeightScreen,
+    IntakeSaveOutcome, IntakeView, Listing, MacroSummary, SaveOutcome, WeighInView, WeightScreen,
 };
 
 /// Current local day, read from the system clock.
@@ -266,6 +266,19 @@ pub fn weight_curve(store: State<'_, Mutex<Store>>) -> Result<WeightScreen, Stri
         .list_weigh_ins(from, today)
         .map_err(|e| view::store_message(&e))?;
     WeightScreen::new(today, &weigh_ins).map_err(|_| view::duplicate_date_message().to_owned())
+}
+
+/// Macro summaries of the « Graphiques » screen, computed from the stored
+/// intakes on every read. The two weeks together span J−14 to J−1.
+#[tauri::command]
+pub fn macro_summary(store: State<'_, Mutex<Store>>) -> Result<MacroSummary, String> {
+    let today = today()?;
+    let from = view::macro_summary_start(today);
+    let store = lock(&store)?;
+    let intakes = store
+        .list_intakes(from, today)
+        .map_err(|e| view::store_message(&e))?;
+    MacroSummary::new(today, &intakes).map_err(|_| view::duplicate_intake_message().to_owned())
 }
 
 /// Deletes one block of a day after confirmation (S10). Without `confirm`,

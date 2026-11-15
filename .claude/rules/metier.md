@@ -72,6 +72,17 @@ The home screen shows, beside the weight trend, the mean Energy of the 7 calenda
 - **E5 · Rounding.** Each day's Energy is already a whole kcal (S8). The mean is the sum of those energies divided by N, rounded half away from zero to a whole kcal. The gap subtracts the two displayed means.
 - **E6 · Refresh.** Adding, replacing or deleting an Intake recalculates the mean and the gap at once.
 
+## Macro mean
+
+The « Graphiques » screen shows, under the weight curve, the mean protein per day of the 7 calendar days ending yesterday, and how it differs from the 7 days before that. It is computed on demand and never stored. It reuses the windows and the rounding of the Energy mean (E1, E2, E3, E5).
+
+- **M1 · Window.** The mean covers J−7 to J−1, where J is today. Today is outside the window. The previous week is J−14 to J−8 (E1).
+- **M2 · Counted days.** A day with an Intake counts, including an Intake whose protein is 0 g. A day without an Intake does not, and is never read as 0 g (E2).
+- **M3 · No mean.** If the window holds no Intake, there is no mean and the screen shows « — ». That absence is not 0 (E3).
+- **M4 · Gap.** The gap is this week's displayed mean minus the previous week's displayed mean, in whole grams, with a sign. If the previous week holds no Intake, there is no gap. A real tie is a gap of 0, shown as « 0 » (E4).
+- **M5 · Rounding.** The mean is the sum of the proteins in tenths of a gram divided by 10 × N, rounded half away from zero to a whole gram. The gap subtracts the two displayed means (E5).
+- **M6 · Refresh.** Adding, replacing or deleting an Intake updates the mean and the gap when the screen is next shown (E6).
+
 ## Alert
 
 An Alert triggers when a Weigh-in deviates by 3 kg or more from the previous day's Trend, upward or downward.

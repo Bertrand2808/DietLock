@@ -1,0 +1,251 @@
+//! Mean protein of the week ending yesterday, and the gap with the week before.
+//!
+//! Same window and same absence rules as the energy mean (E1–E5), applied to
+//! the protein of each intake. Computed on demand and never stored.
+
+use std::collections::HashSet;
+
+use crate::day::Day;
+use crate::energy_week::{DuplicateIntakeDate, ENERGY_WEEK_DAYS, div_round_half_away};
+use crate::intake::Intake;
+
+const TENTHS_PER_GRAM: i64 = 10;
+
+// Returns the whole-gram mean and the number of intakes counted.
+fn protein_mean_ending(intakes: &[Intake], end: Day) -> Option<(u32, u32)> {
+    let from = end.minus_days(ENERGY_WEEK_DAYS - 1)?;
+    let (sum_tenths, days) = intakes
+        .iter()
+        .filter(|intake| intake.date() >= from && intake.date() <= end)
+        .fold((0i64, 0i64), |(sum, days), intake| {
+            (sum + i64::from(intake.protein_tenth_g()), days + 1)
+        });
+    if days == 0 {
+        return None;
+    }
+    let mean_g = div_round_half_away(sum_tenths, days * TENTHS_PER_GRAM);
+    Some((u32::try_from(mean_g).ok()?, u32::try_from(days).ok()?))
+}
+
+/// Mean of one macro over the intakes of a window, in whole grams. M1–M5.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MacroWeek {
+    mean_g: u32,
+    days: u32,
+    gap_g: Option<i32>,
+}
+
+impl MacroWeek {
+    /// Whole grams per entered day, half away from zero.
+    pub fn mean_g(self) -> u32 {
+        self.mean_g
+    }
+
+    /// Intakes inside the window. A day at 0 g counts. A day without an intake does not.
+    pub fn days(self) -> u32 {
+        self.days
+    }
+
+    /// Signed whole grams: this week's displayed mean minus the previous week's.
+    /// `None` means the previous week has no intake. `Some(0)` is a real tie.
+    pub fn gap_g(self) -> Option<i32> {
+        self.gap_g
+    }
+}
+
+/// Protein of the 7 days ending yesterday, compared with the 7 days before that.
+///
+/// `Ok(None)` when yesterday's window has no intake: that is not 0 g.
+///
+/// # Errors
+///
+/// `Err` if any date appears twice, in or out of the windows (S2).
+pub fn protein_week(
+    intakes: &[Intake],
+    today: Day,
+) -> Result<Option<MacroWeek>, DuplicateIntakeDate> {
+    let mut seen = HashSet::new();
+    if !intakes.iter().all(|intake| seen.insert(intake.date())) {
+        return Err(DuplicateIntakeDate);
+    }
+    let Some(yesterday) = today.previous() else {
+        return Ok(None);
+    };
+    let Some((mean_g, days)) = protein_mean_ending(intakes, yesterday) else {
+        return Ok(None);
+    };
+    let gap_g = yesterday
+        .minus_days(ENERGY_WEEK_DAYS)
+        .and_then(|previous_end| protein_mean_ending(intakes, previous_end))
+        .and_then(|(previous_mean_g, _)| {
+            Some(i32::try_from(mean_g).ok()? - i32::try_from(previous_mean_g).ok()?)
+        });
+    Ok(Some(MacroWeek {
+        mean_g,
+        days,
+        gap_g,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::day;
+
+    /// Protein in tenths of a gram, no carbs and no fat.
+    fn protein_tenths(date: &str, tenths: u16) -> Intake {
+        Intake::new(day(date), tenths, 0, 0, None).unwrap()
+    }
+
+    fn protein(date: &str, grams: u16) -> Intake {
+        protein_tenths(date, grams * 10)
+    }
+
+    const TODAY: &str = "2026-11-09";
+
+    fn week(intakes: &[Intake]) -> Option<MacroWeek> {
+        protein_week(intakes, day(TODAY)).unwrap()
+    }
+
+    #[test]
+    fn m3_empty_window_is_not_a_mean_of_zero() {
+        assert_eq!(week(&[]), None);
+    }
+
+    #[test]
+    fn m1_today_is_outside_the_window() {
+        let only_today = protein(TODAY, 150);
+        assert_eq!(week(&[only_today]), None);
+    }
+
+    #[test]
+    fn m3_intake_on_the_previous_week_only_is_still_no_mean() {
+        let previous = protein("2026-11-01", 150);
+        assert_eq!(week(&[previous]), None);
+    }
+
+    #[test]
+    fn m2_a_day_at_zero_grams_counts_and_a_missing_day_does_not() {
+        // Window 11-02..=11-08. Three entered days, four missing.
+        let intakes = [
+            protein("2026-11-02", 150),
+            protein("2026-11-03", 0),
+            protein("2026-11-04", 90),
+        ];
+        let result = week(&intakes).unwrap();
+        assert_eq!(result.days(), 3);
+        assert_eq!(result.mean_g(), 80);
+    }
+
+    #[test]
+    fn m2_a_single_day_at_zero_grams_is_a_mean_of_zero() {
+        let result = week(&[protein("2026-11-08", 0)]).unwrap();
+        assert_eq!(result.mean_g(), 0);
+        assert_eq!(result.days(), 1);
+    }
+
+    #[test]
+    fn m1_window_runs_from_seven_days_before_today_to_yesterday() {
+        // 11-02 (J−7) is inside. 11-01 (J−8) is the previous week. 10-25 (J−15) is outside both.
+        let intakes = [
+            protein(TODAY, 900),
+            protein("2026-11-08", 160),
+            protein("2026-11-02", 140),
+            protein("2026-11-01", 100),
+            protein("2026-10-26", 100),
+            protein("2026-10-25", 900),
+        ];
+        let result = week(&intakes).unwrap();
+        assert_eq!(result.mean_g(), 150);
+        assert_eq!(result.days(), 2);
+        assert_eq!(result.gap_g(), Some(50));
+    }
+
+    #[test]
+    fn m4_no_previous_intake_is_not_a_gap_of_zero() {
+        let result = week(&[protein("2026-11-08", 120)]).unwrap();
+        assert_eq!(result.mean_g(), 120);
+        assert_eq!(result.gap_g(), None);
+    }
+
+    #[test]
+    fn m4_a_real_tie_is_a_gap_of_zero() {
+        let intakes = [protein("2026-11-08", 120), protein("2026-11-01", 120)];
+        assert_eq!(week(&intakes).unwrap().gap_g(), Some(0));
+    }
+
+    #[test]
+    fn m4_negative_gap_is_signed() {
+        let intakes = [protein("2026-11-08", 100), protein("2026-11-01", 142)];
+        assert_eq!(week(&intakes).unwrap().gap_g(), Some(-42));
+    }
+
+    #[test]
+    fn m5_half_gram_rounds_away_from_zero() {
+        // 100,0 g and 101,0 g: mean 100,5 g, displayed 101.
+        let intakes = [
+            protein_tenths("2026-11-07", 1000),
+            protein_tenths("2026-11-08", 1010),
+        ];
+        assert_eq!(week(&intakes).unwrap().mean_g(), 101);
+    }
+
+    #[test]
+    fn m5_a_tenth_of_a_gram_below_the_half_rounds_down() {
+        // 100,0 g and 100,9 g: mean 100,45 g, displayed 100.
+        let intakes = [
+            protein_tenths("2026-11-07", 1000),
+            protein_tenths("2026-11-08", 1009),
+        ];
+        assert_eq!(week(&intakes).unwrap().mean_g(), 100);
+    }
+
+    #[test]
+    fn m5_gap_subtracts_the_displayed_means() {
+        // This week 100,5 → 101. Previous week 101,0 → 101. Displayed gap 0, raw gap −0,5.
+        let intakes = [
+            protein_tenths("2026-11-07", 1000),
+            protein_tenths("2026-11-08", 1010),
+            protein_tenths("2026-10-31", 1010),
+            protein_tenths("2026-11-01", 1010),
+        ];
+        let result = week(&intakes).unwrap();
+        assert_eq!(result.mean_g(), 101);
+        assert_eq!(result.gap_g(), Some(0));
+    }
+
+    #[test]
+    fn only_protein_feeds_the_mean() {
+        let intake = Intake::new(day("2026-11-08"), 1500, 2000, 600, Some(2000)).unwrap();
+        assert_eq!(week(&[intake]).unwrap().mean_g(), 150);
+    }
+
+    #[test]
+    fn order_does_not_matter() {
+        let mut intakes = [
+            protein("2026-11-02", 100),
+            protein("2026-11-08", 50),
+            protein("2026-10-26", 80),
+            protein("2026-01-01", 10),
+        ];
+        let expected = protein_week(&intakes, day(TODAY));
+        intakes.reverse();
+        assert_eq!(protein_week(&intakes, day(TODAY)), expected);
+    }
+
+    #[test]
+    fn s2_duplicate_date_in_the_window_is_an_error() {
+        let intakes = [protein("2026-11-08", 100), protein("2026-11-08", 50)];
+        assert_eq!(protein_week(&intakes, day(TODAY)), Err(DuplicateIntakeDate));
+    }
+
+    #[test]
+    fn s2_duplicate_date_outside_the_windows_is_an_error() {
+        let intakes = [
+            protein("2026-11-08", 100),
+            protein("2026-09-01", 10),
+            protein("2026-09-01", 20),
+        ];
+        assert_eq!(protein_week(&intakes, day(TODAY)), Err(DuplicateIntakeDate));
+    }
+}

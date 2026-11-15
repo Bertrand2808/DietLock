@@ -168,7 +168,27 @@ input {
   color: var(--mut);
 }
 
-#screen-today .pill {
+.macro-card {
+  margin-top: 16px;
+}
+
+.macro-span {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--mut);
+}
+
+.macro-figure {
+  margin: 8px 0 4px;
+  font: 28px/1.2 Georgia, "Iowan Old Style", "Liberation Serif", serif;
+}
+
+.macro-figure.empty {
+  color: var(--mut);
+}
+
+#screen-today .pill,
+#screen-weight .pill {
   display: inline-block;
   font-size: 11px;
   line-height: 1.3;
@@ -176,12 +196,14 @@ input {
   padding: 2px 8px;
 }
 
-#screen-today .pill.down {
+#screen-today .pill.down,
+#screen-weight .pill.down {
   background: var(--down-bg);
   color: var(--down-fg);
 }
 
-#screen-today .pill.up {
+#screen-today .pill.up,
+#screen-weight .pill.up {
   background: var(--warn-bg);
   color: var(--warn);
 }
