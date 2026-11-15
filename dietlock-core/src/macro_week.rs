@@ -11,6 +11,15 @@ use crate::intake::Intake;
 
 const TENTHS_PER_GRAM: i64 = 10;
 
+fn reject_duplicate_dates(intakes: &[Intake]) -> Result<(), DuplicateIntakeDate> {
+    let mut seen = HashSet::new();
+    if intakes.iter().all(|intake| seen.insert(intake.date())) {
+        Ok(())
+    } else {
+        Err(DuplicateIntakeDate)
+    }
+}
+
 // Returns the whole-gram mean and the number of intakes counted.
 fn protein_mean_ending(intakes: &[Intake], end: Day) -> Option<(u32, u32)> {
     let from = end.minus_days(ENERGY_WEEK_DAYS - 1)?;
@@ -77,8 +86,22 @@ impl MacroDay {
 ///
 /// `Err` if any date appears twice (S2).
 pub fn protein_days(intakes: &[Intake], today: Day) -> Result<Vec<MacroDay>, DuplicateIntakeDate> {
-    let _ = (intakes, today);
-    unimplemented!("protein_days")
+    reject_duplicate_dates(intakes)?;
+    let Some(yesterday) = today.previous() else {
+        return Ok(Vec::new());
+    };
+    let days = (0..ENERGY_WEEK_DAYS)
+        .rev()
+        .filter_map(|back| yesterday.minus_days(back))
+        .map(|date| MacroDay {
+            date,
+            protein_tenth_g: intakes
+                .iter()
+                .find(|intake| intake.date() == date)
+                .map(Intake::protein_tenth_g),
+        })
+        .collect();
+    Ok(days)
 }
 
 /// Protein of the 7 days ending yesterday, compared with the 7 days before that.
@@ -92,10 +115,7 @@ pub fn protein_week(
     intakes: &[Intake],
     today: Day,
 ) -> Result<Option<MacroWeek>, DuplicateIntakeDate> {
-    let mut seen = HashSet::new();
-    if !intakes.iter().all(|intake| seen.insert(intake.date())) {
-        return Err(DuplicateIntakeDate);
-    }
+    reject_duplicate_dates(intakes)?;
     let Some(yesterday) = today.previous() else {
         return Ok(None);
     };
