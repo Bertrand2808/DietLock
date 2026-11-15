@@ -186,6 +186,92 @@ mod tests {
 
     const FIFTEEN: MacroPeriod = MacroPeriod::FifteenDays;
 
+    /// 150 g of protein, 200 g of carbs, 60 g of fat.
+    fn all_macros(date: &str) -> Intake {
+        Intake::new(day(date), 1500, 2000, 600, None).unwrap()
+    }
+
+    #[test]
+    fn m14_each_macro_reads_its_own_column() {
+        let intakes = [all_macros("2026-11-08")];
+        for (kind, expected) in [
+            (MacroKind::Protein, 150),
+            (MacroKind::Carbs, 200),
+            (MacroKind::Fat, 60),
+        ] {
+            let mean = macro_mean(&intakes, day(TODAY), MacroPeriod::SevenDays, kind);
+            assert_eq!(mean.unwrap().unwrap().mean_g(), expected, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn m14_each_macro_lists_its_own_daily_values() {
+        let intakes = [all_macros("2026-11-08")];
+        for (kind, expected) in [
+            (MacroKind::Protein, 1500),
+            (MacroKind::Carbs, 2000),
+            (MacroKind::Fat, 600),
+        ] {
+            let listed = macro_days(&intakes, day(TODAY), MacroPeriod::SevenDays, kind).unwrap();
+            assert_eq!(listed[6].tenth_g(), Some(expected), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn m14_the_gap_of_a_macro_compares_that_macro_only() {
+        // Carbs 200 g now and 150 g the week before, while protein is 150 g and 300 g.
+        let now = all_macros("2026-11-08");
+        let before = Intake::new(day("2026-11-01"), 3000, 1500, 0, None).unwrap();
+        let carbs = macro_mean(
+            &[now, before],
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Carbs,
+        );
+        assert_eq!(carbs.unwrap().unwrap().gap_g(), Some(50));
+        let protein = macro_mean(
+            &[now, before],
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Protein,
+        );
+        assert_eq!(protein.unwrap().unwrap().gap_g(), Some(-150));
+    }
+
+    #[test]
+    fn m14_a_macro_at_zero_in_one_column_is_a_value_not_a_hole() {
+        let intake = Intake::new(day("2026-11-08"), 1000, 0, 0, None).unwrap();
+        let carbs = macro_mean(
+            &[intake],
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Carbs,
+        );
+        assert_eq!(carbs.unwrap().unwrap().mean_g(), 0);
+        let listed = macro_days(
+            &[intake],
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Carbs,
+        )
+        .unwrap();
+        assert_eq!(listed[6].tenth_g(), Some(0));
+    }
+
+    #[test]
+    fn m14_a_macro_is_rounded_to_whole_grams_like_protein() {
+        // 100,0 g and 100,9 g of fat: mean 100,45 g, displayed 100.
+        let first = Intake::new(day("2026-11-07"), 0, 0, 1000, None).unwrap();
+        let second = Intake::new(day("2026-11-08"), 0, 0, 1009, None).unwrap();
+        let fat = macro_mean(
+            &[first, second],
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Fat,
+        );
+        assert_eq!(fat.unwrap().unwrap().mean_g(), 100);
+    }
+
     #[test]
     fn m12_period_lengths_are_seven_and_fifteen_days() {
         assert_eq!(MacroPeriod::SevenDays.days(), 7);
