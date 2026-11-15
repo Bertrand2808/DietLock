@@ -163,6 +163,76 @@ mod tests {
             .collect()
     }
 
+    const FIFTEEN: MacroPeriod = MacroPeriod::FifteenDays;
+
+    #[test]
+    fn m12_period_lengths_are_seven_and_fifteen_days() {
+        assert_eq!(MacroPeriod::SevenDays.days(), 7);
+        assert_eq!(FIFTEEN.days(), 15);
+    }
+
+    #[test]
+    fn m12_fifteen_day_list_runs_from_fifteen_days_before_today_to_yesterday() {
+        let listed = protein_days(&[], day(TODAY), FIFTEEN).unwrap();
+        assert_eq!(listed.len(), 15);
+        assert_eq!(listed[0].date().to_string(), "2026-10-25");
+        assert_eq!(listed[14].date().to_string(), "2026-11-08");
+    }
+
+    #[test]
+    fn m12_fifteen_day_list_keeps_holes_and_zero_days() {
+        let intakes = [protein("2026-10-30", 0), protein("2026-11-08", 90)];
+        let listed = protein_days(&intakes, day(TODAY), FIFTEEN).unwrap();
+        assert_eq!(listed[5].protein_tenth_g(), Some(0));
+        assert_eq!(listed[14].protein_tenth_g(), Some(900));
+        assert_eq!(listed[6].protein_tenth_g(), None);
+    }
+
+    #[test]
+    fn m12_an_intake_eight_days_back_counts_in_fifteen_days_only() {
+        let intakes = [protein("2026-11-01", 100)];
+        assert_eq!(week(&intakes), None);
+        let fifteen = protein_mean(&intakes, day(TODAY), FIFTEEN)
+            .unwrap()
+            .unwrap();
+        assert_eq!(fifteen.mean_g(), 100);
+        assert_eq!(fifteen.days(), 1);
+    }
+
+    #[test]
+    fn m12_fifteen_day_window_excludes_today_and_the_sixteenth_day_back() {
+        // 10-25 (J−15) is inside. 10-24 (J−16) is the previous period. Today is outside.
+        let intakes = [
+            protein(TODAY, 900),
+            protein("2026-11-08", 160),
+            protein("2026-10-25", 140),
+            protein("2026-10-24", 100),
+            protein("2026-10-10", 100),
+            protein("2026-10-09", 900),
+        ];
+        let result = protein_mean(&intakes, day(TODAY), FIFTEEN)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.mean_g(), 150);
+        assert_eq!(result.days(), 2);
+        assert_eq!(result.gap_g(), Some(50));
+    }
+
+    #[test]
+    fn m12_fifteen_day_gap_is_absent_when_the_previous_period_is_empty() {
+        // 10-09 (J−31) is outside the previous fifteen days.
+        let intakes = [protein("2026-11-08", 120), protein("2026-10-09", 80)];
+        let result = protein_mean(&intakes, day(TODAY), FIFTEEN)
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.gap_g(), None);
+    }
+
+    #[test]
+    fn m12_fifteen_day_period_with_no_intake_is_not_a_mean_of_zero() {
+        assert_eq!(protein_mean(&[], day(TODAY), FIFTEEN), Ok(None));
+    }
+
     #[test]
     fn m7_days_are_the_seven_days_ending_yesterday_oldest_first() {
         let listed: Vec<String> = days_of(&[]).into_iter().map(|(date, _)| date).collect();
