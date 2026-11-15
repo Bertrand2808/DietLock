@@ -142,6 +142,52 @@ test("M11: an empty period renders a sentence and no svg", () => {
   assert.equal(box.children[0].textContent, "Aucune saisie sur ces 7 jours.");
 });
 
+function fifteenDays(values) {
+  return Array.from({ length: 15 }, (_, index) => ({
+    date: `2026-10-${25 + index > 31 ? "0" + (25 + index - 31) : 25 + index}`,
+    label: `lun. ${index + 1}`,
+    tenthG: values[index] ?? null,
+    text: values[index] == null ? null : `${values[index] / 10} g`.replace(".", ","),
+  }));
+}
+
+test("M12: fifteen days give fifteen slots and a bar only for the entered days", () => {
+  const geometry = macroBars(fifteenDays([1200, null, 0, 1500]), 130);
+  assert.equal(geometry.slots.length, 15);
+  assert.equal(geometry.bars.length, 3);
+  const xs = geometry.bars.map((bar) => bar.x);
+  assert.deepEqual(xs, [...xs].sort((a, b) => a - b));
+  assert.ok(geometry.mean, "the mean line is kept");
+});
+
+test("M13: at fifteen days the axis shows the day number and no value label", () => {
+  const box = host();
+  withDocument(() => renderMacroChart(box, fifteenDays([1200, 1500]), 135, 15));
+  const root = box.children[0];
+  assert.equal(withClass(root, "mc-val").length, 0);
+  const axis = withClass(root, "mc-x");
+  assert.equal(axis.length, 15);
+  assert.equal(axis[0].textContent, "1");
+  assert.equal(withClass(root, "mc-bar").length, 2);
+});
+
+test("M13: at seven days the value labels and the weekday labels stay", () => {
+  const box = host();
+  withDocument(() => renderMacroChart(box, week([1200, 1500]), 135, 7));
+  const root = box.children[0];
+  assert.equal(withClass(root, "mc-val").length, 2);
+  assert.equal(withClass(root, "mc-x")[0].textContent, "lun. 2");
+});
+
+test("M11: the empty sentence names the selected period, not the number of rows", () => {
+  const box = host();
+  withDocument(() => renderMacroChart(box, [], null, 15));
+  assert.equal(box.children[0].textContent, "Aucune saisie sur ces 15 jours.");
+  const seven = host();
+  withDocument(() => renderMacroChart(seven, week([]), null, 7));
+  assert.equal(seven.children[0].textContent, "Aucune saisie sur ces 7 jours.");
+});
+
 test("A6: no red in the chart", () => {
   const box = host();
   withDocument(() => renderMacroChart(box, week([0, 1200, null, 1500]), 900));

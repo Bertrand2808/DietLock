@@ -3,9 +3,10 @@
 
 use dietlock_core::{
     ACTIVITY_NOTE_MAX_CHARS, ActivityDraft, Day, DuplicateDate, DuplicateIntakeDate,
-    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroDay, MacroWeek, ProposedIntake,
-    TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert,
-    display_tenth_kg, energy_kcal, energy_week, protein_days, protein_week, trend, variation,
+    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroDay, MacroMean, MacroPeriod,
+    ProposedIntake, TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN,
+    WeighIn, alert, display_tenth_kg, energy_kcal, energy_week, protein_days, protein_mean, trend,
+    variation,
 };
 use dietlock_store::StoreError;
 use serde::{Deserialize, Serialize};
@@ -24,9 +25,11 @@ pub fn history_start(today: Day) -> Day {
     today.minus_days(HISTORY_DAYS - 1).unwrap_or(today)
 }
 
-/// First day the macro summary reads: the start of the previous week, J−14.
+/// First day the macro summary reads: the start of the previous 15-day period, J−30.
 pub fn macro_summary_start(today: Day) -> Day {
-    today.minus_days(ENERGY_WEEK_DAYS * 2).unwrap_or(today)
+    today
+        .minus_days(MacroPeriod::FifteenDays.days() * 2)
+        .unwrap_or(today)
 }
 
 /// Tenths of a kg written with a decimal comma, e.g. `82,6`.
@@ -259,11 +262,11 @@ impl From<Option<EnergyWeek>> for EnergyWeekView {
     }
 }
 
-/// One macro over the week ending yesterday, as the screen receives it.
+/// One macro over the period ending yesterday, as the screen receives it.
 /// `Absent` is not a mean of 0 g. A `gap_g` of `None` is not a gap of 0.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
-pub enum MacroWeekView {
+pub enum MacroMeanView {
     Absent,
     #[serde(rename_all = "camelCase")]
     Present {
@@ -273,14 +276,14 @@ pub enum MacroWeekView {
     },
 }
 
-impl From<Option<MacroWeek>> for MacroWeekView {
-    fn from(week: Option<MacroWeek>) -> Self {
-        match week {
+impl From<Option<MacroMean>> for MacroMeanView {
+    fn from(mean: Option<MacroMean>) -> Self {
+        match mean {
             None => Self::Absent,
-            Some(week) => Self::Present {
-                mean_g: week.mean_g(),
-                days: week.days(),
-                gap_g: week.gap_g(),
+            Some(mean) => Self::Present {
+                mean_g: mean.mean_g(),
+                days: mean.days(),
+                gap_g: mean.gap_g(),
             },
         }
     }
@@ -317,24 +320,46 @@ impl From<MacroDay> for MacroDayView {
     }
 }
 
-/// Macro summaries of the « Graphiques » screen. M1–M10.
+/// The macros over one period ending yesterday. M1–M12.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroPeriodView {
+    pub protein: MacroMeanView,
+    /// One row per day of the period, oldest first.
+    pub protein_days: Vec<MacroDayView>,
+}
+
+impl MacroPeriodView {
+    fn new(
+        today: Day,
+        intakes: &[Intake],
+        period: MacroPeriod,
+    ) -> Result<Self, DuplicateIntakeDate> {
+        Ok(Self {
+            protein: MacroMeanView::from(protein_mean(intakes, today, period)?),
+            protein_days: protein_days(intakes, today, period)?
+                .into_iter()
+                .map(MacroDayView::from)
+                .collect(),
+        })
+    }
+}
+
+/// Macro summaries of the « Graphiques » screen, for both periods, so the
+/// selector switches without another call. M12.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MacroSummary {
-    pub protein: MacroWeekView,
-    /// The 7 days ending yesterday, oldest first.
-    pub protein_days: Vec<MacroDayView>,
+    pub seven_days: MacroPeriodView,
+    pub fifteen_days: MacroPeriodView,
 }
 
 impl MacroSummary {
     /// `Err` when two intakes share a date (S2).
     pub fn new(today: Day, intakes: &[Intake]) -> Result<Self, DuplicateIntakeDate> {
         Ok(Self {
-            protein: MacroWeekView::from(protein_week(intakes, today)?),
-            protein_days: protein_days(intakes, today)?
-                .into_iter()
-                .map(MacroDayView::from)
-                .collect(),
+            seven_days: MacroPeriodView::new(today, intakes, MacroPeriod::SevenDays)?,
+            fifteen_days: MacroPeriodView::new(today, intakes, MacroPeriod::FifteenDays)?,
         })
     }
 }
@@ -1079,16 +1104,61 @@ mod tests {
     }
 
     #[test]
-    fn m1_summary_reads_intakes_from_the_start_of_the_previous_week() {
-        // Previous week is J−14 to J−8, so the first day read is J−14.
-        assert_eq!(macro_summary_start(day("2026-11-09")), day("2026-10-26"));
-        assert_eq!(macro_summary_start(day("2026-03-01")), day("2026-02-15"));
+    fn m12_summary_reads_intakes_from_the_start_of_the_previous_fifteen_days() {
+        // The previous 15-day period is J−30 to J−16, so the first day read is J−30.
+        assert_eq!(macro_summary_start(day("2026-11-09")), day("2026-10-10"));
+        assert_eq!(macro_summary_start(day("2026-03-01")), day("2026-01-30"));
+    }
+
+    #[test]
+    fn m12_summary_carries_a_seven_day_and_a_fifteen_day_period() {
+        let eight_days_back = macros("2026-11-01", 1000, 0, 0, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[eight_days_back]).unwrap();
+        assert_eq!(summary.seven_days.protein, MacroMeanView::Absent);
+        assert_eq!(summary.seven_days.protein_days.len(), 7);
+        assert_eq!(
+            summary.fifteen_days.protein,
+            MacroMeanView::Present {
+                mean_g: 100,
+                days: 1,
+                gap_g: None,
+            }
+        );
+        assert_eq!(summary.fifteen_days.protein_days.len(), 15);
+        assert_eq!(summary.fifteen_days.protein_days[0].date, "2026-10-25");
+        assert_eq!(summary.fifteen_days.protein_days[14].date, "2026-11-08");
+    }
+
+    #[test]
+    fn m12_summary_fifteen_day_gap_compares_with_the_fifteen_days_before() {
+        let current = macros("2026-11-08", 1500, 0, 0, None);
+        let earlier = macros("2026-10-20", 1300, 0, 0, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[current, earlier]).unwrap();
+        // 10-20 is in the previous 15 days (10-10 to 10-24), and 11-08 in the current ones.
+        assert_eq!(
+            summary.fifteen_days.protein,
+            MacroMeanView::Present {
+                mean_g: 150,
+                days: 1,
+                gap_g: Some(20),
+            }
+        );
+        assert_eq!(summary.seven_days.protein_days.len(), 7);
+        assert_eq!(
+            summary.seven_days.protein,
+            MacroMeanView::Present {
+                mean_g: 150,
+                days: 1,
+                gap_g: None,
+            }
+        );
     }
 
     #[test]
     fn m7_summary_lists_seven_days_ending_yesterday_with_a_short_label() {
         let summary = MacroSummary::new(day("2026-11-09"), &[]).unwrap();
         let labels: Vec<&str> = summary
+            .seven_days
             .protein_days
             .iter()
             .map(|d| d.label.as_str())
@@ -1099,8 +1169,8 @@ mod tests {
                 "lun. 2", "mar. 3", "mer. 4", "jeu. 5", "ven. 6", "sam. 7", "dim. 8"
             ]
         );
-        assert_eq!(summary.protein_days[0].date, "2026-11-02");
-        assert_eq!(summary.protein_days[6].date, "2026-11-08");
+        assert_eq!(summary.seven_days.protein_days[0].date, "2026-11-02");
+        assert_eq!(summary.seven_days.protein_days[6].date, "2026-11-08");
     }
 
     #[test]
@@ -1108,6 +1178,7 @@ mod tests {
         let summary = MacroSummary::new(day("2026-11-09"), &[]).unwrap();
         assert!(
             summary
+                .seven_days
                 .protein_days
                 .iter()
                 .all(|d| d.tenth_g.is_none() && d.text.is_none())
@@ -1118,7 +1189,7 @@ mod tests {
     fn m8_summary_day_at_zero_grams_has_a_value_and_a_text() {
         let zero = macros("2026-11-05", 0, 0, 0, None);
         let summary = MacroSummary::new(day("2026-11-09"), &[zero]).unwrap();
-        let entered = &summary.protein_days[3];
+        let entered = &summary.seven_days.protein_days[3];
         assert_eq!(entered.tenth_g, Some(0));
         assert_eq!(entered.text.as_deref(), Some("0 g"));
     }
@@ -1128,16 +1199,22 @@ mod tests {
         let whole = macros("2026-11-07", 1420, 0, 0, None);
         let decimal = macros("2026-11-08", 1425, 0, 0, None);
         let summary = MacroSummary::new(day("2026-11-09"), &[whole, decimal]).unwrap();
-        assert_eq!(summary.protein_days[5].text.as_deref(), Some("142 g"));
-        assert_eq!(summary.protein_days[6].text.as_deref(), Some("142,5 g"));
-        assert_eq!(summary.protein_days[6].tenth_g, Some(1425));
+        assert_eq!(
+            summary.seven_days.protein_days[5].text.as_deref(),
+            Some("142 g")
+        );
+        assert_eq!(
+            summary.seven_days.protein_days[6].text.as_deref(),
+            Some("142,5 g")
+        );
+        assert_eq!(summary.seven_days.protein_days[6].tenth_g, Some(1425));
     }
 
     #[test]
     fn m3_summary_without_intake_in_the_window_is_absent_not_zero() {
         let today_only = macros("2026-11-09", 1500, 0, 0, None);
         let summary = MacroSummary::new(day("2026-11-09"), &[today_only]).unwrap();
-        assert_eq!(summary.protein, MacroWeekView::Absent);
+        assert_eq!(summary.seven_days.protein, MacroMeanView::Absent);
     }
 
     #[test]
@@ -1145,8 +1222,8 @@ mod tests {
         let zero = macros("2026-11-08", 0, 0, 0, None);
         let summary = MacroSummary::new(day("2026-11-09"), &[zero]).unwrap();
         assert_eq!(
-            summary.protein,
-            MacroWeekView::Present {
+            summary.seven_days.protein,
+            MacroMeanView::Present {
                 mean_g: 0,
                 days: 1,
                 gap_g: None,
@@ -1160,8 +1237,8 @@ mod tests {
         let earlier = macros("2026-11-01", 1300, 100, 100, None);
         let summary = MacroSummary::new(day("2026-11-09"), &[current, earlier]).unwrap();
         assert_eq!(
-            summary.protein,
-            MacroWeekView::Present {
+            summary.seven_days.protein,
+            MacroMeanView::Present {
                 mean_g: 142,
                 days: 1,
                 gap_g: Some(12),

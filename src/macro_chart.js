@@ -59,13 +59,17 @@ function textNode(className, attrs, content) {
   return node;
 }
 
-export function renderMacroChart(host, days, meanG) {
+// Beyond this many days the bars are too narrow for a value or a weekday label.
+const LABELLED_DAYS_MAX = 7;
+
+export function renderMacroChart(host, days, meanG, periodDays = days.length) {
   host.replaceChildren();
   const geometry = macroBars(days, meanG);
+  const labelled = days.length <= LABELLED_DAYS_MAX;
   if (geometry.empty) {
     const note = document.createElement("p");
     note.className = "empty";
-    note.textContent = `Aucune saisie sur ces ${days.length} jours.`;
+    note.textContent = `Aucune saisie sur ces ${periodDays} jours.`;
     host.append(note);
     return;
   }
@@ -91,12 +95,14 @@ export function renderMacroChart(host, days, meanG) {
     title.textContent = bar.title;
     rect.append(title);
     root.append(rect);
+    if (!labelled) continue;
     root.append(
       textNode("mc-val", { x: (bar.x + bar.width / 2).toFixed(1), y: (bar.y - 4).toFixed(1), "text-anchor": "middle" }, bar.text),
     );
   }
   for (const slot of geometry.slots) {
-    root.append(textNode("mc-x", { x: slot.x.toFixed(1), y: HEIGHT - 6, "text-anchor": "middle" }, slot.label));
+    const axisLabel = labelled ? slot.label : slot.label.split(" ").pop();
+    root.append(textNode("mc-x", { x: slot.x.toFixed(1), y: HEIGHT - 6, "text-anchor": "middle" }, axisLabel));
   }
   if (geometry.mean) {
     const { mean } = geometry;

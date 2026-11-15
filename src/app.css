@@ -168,8 +168,12 @@ input {
   color: var(--mut);
 }
 
+.macro-head {
+  margin: 16px 0 8px;
+}
+
 .macro-card {
-  margin-top: 16px;
+  margin-top: 0;
 }
 
 .macro-span {
