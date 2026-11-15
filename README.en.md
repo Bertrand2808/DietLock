@@ -10,7 +10,7 @@ Daily tracking of weight, macros and hydration, with a smoothed weight trend. De
 - Beside it: mean kcal over the 7 days ending yesterday, and the gap with the 7 days before.
 - Data stays on your machine (SQLite), no account, no network.
 
-**Status (v0.2.0)**: a home screen (trend, entry, 30 days of weight, energy and water) and a weight curve screen, both following light and dark mode. No targets yet.
+**Status (v0.2.0)**: a home screen (trend, entry, 30 days of weight, energy and water) and a « Graphiques » screen (weight curve, protein mean), both following light and dark mode. No targets yet.
 
 ## Install (macOS, Apple Silicon)
 

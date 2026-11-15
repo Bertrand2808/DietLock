@@ -10,7 +10,7 @@ Suivi quotidien du poids, des macros et de l'hydratation, avec une tendance de p
 - À côté : moyenne des kcal sur les 7 jours qui se terminent hier, et l'écart avec les 7 jours d'avant.
 - Données stockées uniquement en local (SQLite), sans compte ni réseau.
 
-**État (v0.2.0)** : un écran d'accueil (tendance, saisie, 30 jours de poids, d'énergie et d'eau) et un écran de courbe de poids, qui suivent le mode clair ou sombre. Pas encore d'objectifs.
+**État (v0.2.0)** : un écran d'accueil (tendance, saisie, 30 jours de poids, d'énergie et d'eau) et un écran « Graphiques » (courbe de poids, moyenne de protéines), qui suivent le mode clair ou sombre. Pas encore d'objectifs.
 
 ## Installer (macOS, Apple Silicon)
 

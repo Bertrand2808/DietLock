@@ -24,7 +24,7 @@ pub fn history_start(today: Day) -> Day {
     today.minus_days(HISTORY_DAYS - 1).unwrap_or(today)
 }
 
-/// First day the macro summary reads: both weeks end yesterday, so J−14.
+/// First day the macro summary reads: the start of the previous week, J−14.
 pub fn macro_summary_start(today: Day) -> Day {
     today.minus_days(ENERGY_WEEK_DAYS * 2).unwrap_or(today)
 }

@@ -4,7 +4,7 @@ The `Graphiques` screen shows, under the weight curve, a `Protéines` block: the
 
 ## Sub-features
 
-- `macro-mean` shows `#macro-protein-figure` as `N g/j` and `#macro-protein-note` as `N jours saisis`.
+- `macro-mean` shows `#macro-protein-figure` as `N g/j` and `#macro-protein-note` ending with `N jours saisis`. When a pill is shown, it comes first in the note.
 - `macro-gap` shows `#macro-protein-pill` such as `+12 vs semaine d'avant` when the previous week has intakes. Class `up` when positive, `down` when negative, `even` when 0.
 - `macro-no-comparison` shows no pill when the previous week is empty.
 - `macro-none` shows `—` when the window has no intake. The figure has no digit.
@@ -21,7 +21,7 @@ Preconditions:
 
 - **Read an empty window.** Open `Graphiques` with `eval 'document.getElementById("tab-weight").click()'`. `#macro-protein-figure` is `—` and `#macro-protein-note` is empty.
 - **Enter days.** Enter intakes the way `energy-week.md` does, with known protein.
-- **Read the mean.** `#macro-protein-figure` is the mean in whole grams plus ` g/j`. `#macro-protein-note` starts with `N jours saisis` or `1 jour saisi`.
+- **Read the mean.** `#macro-protein-figure` is the mean in whole grams plus ` g/j`. `#macro-protein-note` ends with `N jours saisis` or `1 jour saisi`.
 - **Read the gap.** `#macro-protein-pill` is absent when the previous week is empty.
 - **Reopen.** Run `dietlock-verify relaunch`, open `Graphiques`, and read the same figures.
 - **Proof.** One screenshot of `Graphiques` plus the `text` output and `db`.

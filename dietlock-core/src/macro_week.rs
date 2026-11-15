@@ -11,8 +11,7 @@ use crate::intake::Intake;
 
 const TENTHS_PER_GRAM: i64 = 10;
 
-/// Whole-gram mean of the protein of the intakes in the window ending at `end`.
-/// The second value is the number of intakes counted.
+// Returns the whole-gram mean and the number of intakes counted.
 fn protein_mean_ending(intakes: &[Intake], end: Day) -> Option<(u32, u32)> {
     let from = end.minus_days(ENERGY_WEEK_DAYS - 1)?;
     let (sum_tenths, days) = intakes

@@ -269,7 +269,7 @@ pub fn weight_curve(store: State<'_, Mutex<Store>>) -> Result<WeightScreen, Stri
 }
 
 /// Macro summaries of the « Graphiques » screen, computed from the stored
-/// intakes on every read. Both weeks end yesterday, so they start at J−14.
+/// intakes on every read. The two weeks together span J−14 to J−1.
 #[tauri::command]
 pub fn macro_summary(store: State<'_, Mutex<Store>>) -> Result<MacroSummary, String> {
     let today = today()?;
