@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { macroCopy, macroPeriodCaption } from "./macros.js";
+import { MACRO_BLOCKS, macroCopy, macroPeriodCaption } from "./macros.js";
 
 test("M3: no intake is a dash, never a zero", () => {
   const copy = macroCopy({ kind: "absent" });
@@ -50,6 +50,17 @@ test("M13: the gap wording follows the period, not always the week", () => {
   assert.equal(macroCopy(down, 15).pill.text, "−3 vs 15 jours d'avant");
   const tie = { kind: "present", meanG: 100, days: 5, gapG: 0 };
   assert.equal(macroCopy(tie, 15).pill.text, "0 vs 15 jours d'avant");
+});
+
+test("M14: the blocks are Protéines, Glucides, Lipides in that order", () => {
+  assert.deepEqual(
+    MACRO_BLOCKS.map((block) => block.key),
+    ["protein", "carbs", "fat"],
+  );
+  assert.deepEqual(
+    MACRO_BLOCKS.map((block) => block.title),
+    ["Protéines", "Glucides", "Lipides"],
+  );
 });
 
 test("M13: the caption names the period", () => {
