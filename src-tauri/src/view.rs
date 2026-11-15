@@ -1049,6 +1049,54 @@ mod tests {
     }
 
     #[test]
+    fn m7_summary_lists_seven_days_ending_yesterday_with_a_short_label() {
+        let summary = MacroSummary::new(day("2026-11-09"), &[]).unwrap();
+        let labels: Vec<&str> = summary
+            .protein_days
+            .iter()
+            .map(|d| d.label.as_str())
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                "lun. 2", "mar. 3", "mer. 4", "jeu. 5", "ven. 6", "sam. 7", "dim. 8"
+            ]
+        );
+        assert_eq!(summary.protein_days[0].date, "2026-11-02");
+        assert_eq!(summary.protein_days[6].date, "2026-11-08");
+    }
+
+    #[test]
+    fn m8_summary_day_without_intake_has_no_value_and_no_text() {
+        let summary = MacroSummary::new(day("2026-11-09"), &[]).unwrap();
+        assert!(
+            summary
+                .protein_days
+                .iter()
+                .all(|d| d.tenth_g.is_none() && d.text.is_none())
+        );
+    }
+
+    #[test]
+    fn m8_summary_day_at_zero_grams_has_a_value_and_a_text() {
+        let zero = macros("2026-11-05", 0, 0, 0, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[zero]).unwrap();
+        let entered = &summary.protein_days[3];
+        assert_eq!(entered.tenth_g, Some(0));
+        assert_eq!(entered.text.as_deref(), Some("0 g"));
+    }
+
+    #[test]
+    fn m10_summary_day_text_is_grams_with_a_decimal_comma() {
+        let whole = macros("2026-11-07", 1420, 0, 0, None);
+        let decimal = macros("2026-11-08", 1425, 0, 0, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[whole, decimal]).unwrap();
+        assert_eq!(summary.protein_days[5].text.as_deref(), Some("142 g"));
+        assert_eq!(summary.protein_days[6].text.as_deref(), Some("142,5 g"));
+        assert_eq!(summary.protein_days[6].tenth_g, Some(1425));
+    }
+
+    #[test]
     fn m3_summary_without_intake_in_the_window_is_absent_not_zero() {
         let today_only = macros("2026-11-09", 1500, 0, 0, None);
         let summary = MacroSummary::new(day("2026-11-09"), &[today_only]).unwrap();
