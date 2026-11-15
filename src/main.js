@@ -27,6 +27,7 @@ import {
 import { renderChart } from "./chart.js";
 import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { energyCopy } from "./energy.js";
+import { macroCopy } from "./macros.js";
 import { savesOnEnter, screenShortcut } from "./keys.js";
 import {
   blockStatus,
@@ -61,6 +62,7 @@ let waterDirty = false;
 let screenName = "today";
 let span = 15;
 let curve = null;
+let macros = null;
 let curveLoaded = false;
 
 const mac = /\bMac/i.test(navigator.platform) || /\bMac/i.test(navigator.userAgent);
@@ -402,9 +404,29 @@ function renderWeight() {
     hint.append(mod, num, ` ${label}`);
   };
   piece("1", "Aujourd'hui · ");
-  piece("2", "Poids");
+  piece("2", "Graphiques");
   renderChart($("chartbox"), days, curve.notice, span);
   paintChartMessage(curve.notice, days);
+  renderMacroBlock("protein", macros?.protein);
+}
+
+function renderMacroBlock(name, week) {
+  const copy = macroCopy(week);
+  const figure = $(`macro-${name}-figure`);
+  const note = $(`macro-${name}-note`);
+  figure.replaceChildren();
+  note.replaceChildren();
+  figure.className = copy.kind === "present" ? "macro-figure" : "macro-figure empty";
+  figure.textContent = copy.meanText;
+  if (copy.pill) {
+    const pill = document.createElement("span");
+    pill.id = `macro-${name}-pill`;
+    pill.className = `pill ${copy.pill.tone}`;
+    pill.textContent = copy.pill.text;
+    note.append(pill);
+    if (copy.note) note.append(document.createElement("br"));
+  }
+  if (copy.note) note.append(copy.note);
 }
 
 function renderWeightError(message) {
@@ -417,7 +439,7 @@ function renderWeightError(message) {
 }
 
 async function loadCurve() {
-  curve = await invoke("weight_curve");
+  [curve, macros] = await Promise.all([invoke("weight_curve"), invoke("macro_summary")]);
   curveLoaded = true;
 }
 
