@@ -41,11 +41,11 @@ The Energy mean minus the Energy mean of the 7 calendar days before that window,
 _Avoid_: Delta, variance
 
 **Macro mean**:
-The simple mean of one macro over the Intakes in the 7 calendar days ending yesterday, in whole grams. A day without an Intake is left out. An Intake at 0 g counts. The mean does not exist when that window has no Intake.
+The simple mean of one macro over the Intakes in the 7 or 15 calendar days ending yesterday (the selected period), in whole grams. A day without an Intake is left out. An Intake at 0 g counts. The mean does not exist when that window has no Intake.
 _Avoid_: Protein average, macro trend
 
 **Macro gap**:
-The Macro mean minus the Macro mean of the 7 calendar days before that window, in whole grams. It does not exist when the earlier week has no Intake. A tie is a gap of 0.
+The Macro mean minus the Macro mean of the same number of days before that window, in whole grams. It does not exist when the earlier period has no Intake. A tie is a gap of 0.
 _Avoid_: Delta, variance
 
 ## Trend and alerts

@@ -194,8 +194,15 @@
           <p class="hint" id="w-hint"></p>
         </div>
       </section>
+      <div class="weight-top macro-head">
+        <h2 id="macro-title">Macros</h2>
+        <div class="seg" id="macro-seg" role="group" aria-label="Période des macros">
+          <button type="button" data-macro-span="7" aria-pressed="true">7 j</button>
+          <button type="button" data-macro-span="15" aria-pressed="false">15 j</button>
+        </div>
+      </div>
       <section class="card macro-card" id="macro-protein" aria-labelledby="macro-protein-title">
-        <h2 id="macro-protein-title">Protéines <span class="macro-span">7 derniers jours, hier compris</span></h2>
+        <h2 id="macro-protein-title">Protéines <span class="macro-span" id="macro-protein-span">7 derniers jours, hier compris</span></h2>
         <p id="macro-protein-figure" class="macro-figure"></p>
         <p id="macro-protein-note" class="sub"></p>
         <div class="macro-chart" id="macro-protein-chart"></div>

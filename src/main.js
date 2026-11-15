@@ -28,7 +28,8 @@ import { renderChart } from "./chart.js";
 import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { energyCopy } from "./energy.js";
 import { renderMacroChart } from "./macro_chart.js";
-import { macroCopy } from "./macros.js";
+import { pickPeriod } from "./macro_period.js";
+import { macroCopy, macroPeriodCaption } from "./macros.js";
 import { savesOnEnter, screenShortcut } from "./keys.js";
 import {
   blockStatus,
@@ -64,6 +65,7 @@ let screenName = "today";
 let span = 15;
 let curve = null;
 let macros = null;
+let macroSpan = 7;
 let curveLoaded = false;
 
 const mac = /\bMac/i.test(navigator.platform) || /\bMac/i.test(navigator.userAgent);
@@ -408,11 +410,27 @@ function renderWeight() {
   piece("2", "Graphiques");
   renderChart($("chartbox"), days, curve.notice, span);
   paintChartMessage(curve.notice, days);
-  renderMacroBlock("protein", macros?.protein, macros?.proteinDays ?? []);
+  renderMacros();
+}
+
+function paintMacroSpan() {
+  for (const button of $("macro-seg").querySelectorAll("button")) {
+    button.setAttribute(
+      "aria-pressed",
+      Number(button.dataset.macroSpan) === macroSpan ? "true" : "false",
+    );
+  }
+}
+
+function renderMacros() {
+  paintMacroSpan();
+  const period = pickPeriod(macros, macroSpan);
+  $("macro-protein-span").textContent = macroPeriodCaption(macroSpan);
+  renderMacroBlock("protein", period?.protein, period?.proteinDays ?? []);
 }
 
 function renderMacroBlock(name, week, chartDays) {
-  const copy = macroCopy(week);
+  const copy = macroCopy(week, macroSpan);
   const figure = $(`macro-${name}-figure`);
   const note = $(`macro-${name}-note`);
   figure.replaceChildren();
@@ -428,7 +446,12 @@ function renderMacroBlock(name, week, chartDays) {
     if (copy.note) note.append(document.createElement("br"));
   }
   if (copy.note) note.append(copy.note);
-  renderMacroChart($(`macro-${name}-chart`), chartDays, week?.kind === "present" ? week.meanG : null);
+  renderMacroChart(
+    $(`macro-${name}-chart`),
+    chartDays,
+    week?.kind === "present" ? week.meanG : null,
+    macroSpan,
+  );
 }
 
 function renderWeightError(message) {
@@ -1002,6 +1025,12 @@ $("span-seg").addEventListener("click", (event) => {
   if (!button) return;
   span = Number(button.dataset.span);
   if (curve) renderWeight();
+});
+$("macro-seg").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  macroSpan = Number(button.dataset.macroSpan);
+  if (macros) renderMacros();
 });
 $("entry").addEventListener("submit", (event) => event.preventDefault());
 $("save").addEventListener("click", saveAll);

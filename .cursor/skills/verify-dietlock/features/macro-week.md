@@ -4,6 +4,10 @@ The `Graphiques` screen shows, under the weight curve, a `Protéines` block with
 
 ## Sub-features
 
+- `macro-period` is the selector `#macro-seg` with two buttons, `[data-macro-span="7"]` (`7 j`, pressed on launch) and `[data-macro-span="15"]` (`15 j`). It sits above the macro blocks. Clicking `15 j` presses it, sets `#macro-protein-span` to `15 derniers jours, hier compris`, and redraws the block for 15 days. It never changes the weight selector `#span-seg`, and `#span-seg` never changes it.
+- `macro-period-wording` in 15 days names the previous period in the pill: `+12 vs 15 jours d'avant`. In 7 days it stays `vs semaine d'avant`.
+- `macro-bars-15` in 15 days draws 15 `text.mc-x` labels that are the day number only, no `text.mc-val`, and a `rect.mc-bar` per entered day. The empty sentence reads `Aucune saisie sur ces 15 jours.`
+
 - `macro-mean` shows `#macro-protein-figure` as `N g/j` and `#macro-protein-note` ending with `N jours saisis`. When a pill is shown, it comes first in the note.
 - `macro-gap` shows `#macro-protein-pill` such as `+12 vs semaine d'avant` when the previous week has intakes. Class `up` when positive, `down` when negative, `even` when 0.
 - `macro-no-comparison` shows no pill when the previous week is empty.
