@@ -1037,6 +1037,19 @@ mod tests {
     }
 
     #[test]
+    fn m1_summary_reads_intakes_from_the_start_of_the_previous_week() {
+        // Previous week is J−14 to J−8, so the first day read is J−14.
+        assert_eq!(macro_summary_start(day("2026-11-09")), day("2026-10-26"));
+        assert_eq!(macro_summary_start(day("2026-03-01")), day("2026-02-15"));
+    }
+
+    #[test]
+    fn m1_summary_start_stays_on_today_at_the_calendar_lower_bound() {
+        let first = day("1000-01-01");
+        assert_eq!(macro_summary_start(first), first);
+    }
+
+    #[test]
     fn m3_summary_without_intake_in_the_window_is_absent_not_zero() {
         let today_only = macros("2026-11-09", 1500, 0, 0, None);
         let summary = MacroSummary::new(day("2026-11-09"), &[today_only]).unwrap();
