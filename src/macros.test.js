@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { macroCopy } from "./macros.js";
+import { macroCopy, macroPeriodCaption } from "./macros.js";
 
 test("M3: no intake is a dash, never a zero", () => {
   const copy = macroCopy({ kind: "absent" });
@@ -39,4 +39,20 @@ test("M4: a negative gap uses the minus sign and a down pill", () => {
 test("M4: a real tie is a gap of 0 with a neutral tone, not an absent gap", () => {
   const copy = macroCopy({ kind: "present", meanG: 120, days: 2, gapG: 0 });
   assert.deepEqual(copy.pill, { text: "0 vs semaine d'avant", tone: "even" });
+});
+
+test("M13: the gap wording follows the period, not always the week", () => {
+  const week = { kind: "present", meanG: 100, days: 5, gapG: 8 };
+  assert.equal(macroCopy(week, 7).pill.text, "+8 vs semaine d'avant");
+  assert.equal(macroCopy(week).pill.text, "+8 vs semaine d'avant");
+  assert.equal(macroCopy(week, 15).pill.text, "+8 vs 15 jours d'avant");
+  const down = { kind: "present", meanG: 100, days: 5, gapG: -3 };
+  assert.equal(macroCopy(down, 15).pill.text, "−3 vs 15 jours d'avant");
+  const tie = { kind: "present", meanG: 100, days: 5, gapG: 0 };
+  assert.equal(macroCopy(tie, 15).pill.text, "0 vs 15 jours d'avant");
+});
+
+test("M12: the caption names the period", () => {
+  assert.equal(macroPeriodCaption(7), "7 derniers jours, hier compris");
+  assert.equal(macroPeriodCaption(15), "15 derniers jours, hier compris");
 });
