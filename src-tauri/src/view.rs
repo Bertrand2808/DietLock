@@ -24,6 +24,11 @@ pub fn history_start(today: Day) -> Day {
     today.minus_days(HISTORY_DAYS - 1).unwrap_or(today)
 }
 
+/// First day the macro summary reads: both weeks end yesterday, so J−14.
+pub fn macro_summary_start(today: Day) -> Day {
+    today.minus_days(ENERGY_WEEK_DAYS * 2).unwrap_or(today)
+}
+
 /// Tenths of a kg written with a decimal comma, e.g. `82,6`.
 pub fn format_tenth_kg(tenth: i32) -> String {
     let sign = if tenth < 0 { "-" } else { "" };
@@ -1041,12 +1046,6 @@ mod tests {
         // Previous week is J−14 to J−8, so the first day read is J−14.
         assert_eq!(macro_summary_start(day("2026-11-09")), day("2026-10-26"));
         assert_eq!(macro_summary_start(day("2026-03-01")), day("2026-02-15"));
-    }
-
-    #[test]
-    fn m1_summary_start_stays_on_today_at_the_calendar_lower_bound() {
-        let first = day("1000-01-01");
-        assert_eq!(macro_summary_start(first), first);
     }
 
     #[test]

@@ -5,9 +5,9 @@ use std::sync::Mutex;
 
 use chrono::Timelike;
 use dietlock_core::{
-    ActivityDraft, Day, ENERGY_WEEK_DAYS, Intake, IntakePresence, SaveDecision, SwitchHour,
-    TREND_WINDOW_DAYS, WeighIn, build_activities, check_not_future, decide_intake, decide_water,
-    decide_weigh_in, parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
+    ActivityDraft, Day, Intake, IntakePresence, SaveDecision, SwitchHour, TREND_WINDOW_DAYS,
+    WeighIn, build_activities, check_not_future, decide_intake, decide_water, decide_weigh_in,
+    parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
     proposed_intake_date as core_proposed_intake_date, proposed_weigh_in_date, trend,
 };
 use dietlock_store::{SaveError, Store};
@@ -273,7 +273,7 @@ pub fn weight_curve(store: State<'_, Mutex<Store>>) -> Result<WeightScreen, Stri
 #[tauri::command]
 pub fn macro_summary(store: State<'_, Mutex<Store>>) -> Result<MacroSummary, String> {
     let today = today()?;
-    let from = today.minus_days(ENERGY_WEEK_DAYS * 2).unwrap_or(today);
+    let from = view::macro_summary_start(today);
     let store = lock(&store)?;
     let intakes = store
         .list_intakes(from, today)
