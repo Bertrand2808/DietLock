@@ -3,9 +3,9 @@
 
 use dietlock_core::{
     ACTIVITY_NOTE_MAX_CHARS, ActivityDraft, Day, DuplicateDate, DuplicateIntakeDate,
-    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroDay, MacroMean, MacroPeriod,
+    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroDay, MacroKind, MacroMean, MacroPeriod,
     ProposedIntake, TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN,
-    WeighIn, alert, display_tenth_kg, energy_kcal, energy_week, protein_days, protein_mean, trend,
+    WeighIn, alert, display_tenth_kg, energy_kcal, energy_week, macro_days, macro_mean, trend,
     variation,
 };
 use dietlock_store::StoreError;
@@ -312,21 +312,47 @@ impl From<MacroDay> for MacroDayView {
         Self {
             date: date.to_string(),
             label: format!("{weekday} {}", date.day_number()),
-            tenth_g: day.protein_tenth_g(),
+            tenth_g: day.tenth_g(),
             text: day
-                .protein_tenth_g()
+                .tenth_g()
                 .map(|tenth| format!("{} g", format_trimmed(u32::from(tenth), 10))),
         }
     }
 }
 
-/// The macros over one period ending yesterday. M1–M12.
+/// One macro over one period: its mean and gap, and its daily rows. M1–M12.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroBlockView {
+    pub mean: MacroMeanView,
+    /// One row per day of the period, oldest first.
+    pub days: Vec<MacroDayView>,
+}
+
+impl MacroBlockView {
+    fn new(
+        today: Day,
+        intakes: &[Intake],
+        period: MacroPeriod,
+        kind: MacroKind,
+    ) -> Result<Self, DuplicateIntakeDate> {
+        Ok(Self {
+            mean: MacroMeanView::from(macro_mean(intakes, today, period, kind)?),
+            days: macro_days(intakes, today, period, kind)?
+                .into_iter()
+                .map(MacroDayView::from)
+                .collect(),
+        })
+    }
+}
+
+/// Protein, carbs and fat over one period ending yesterday. M14.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MacroPeriodView {
-    pub protein: MacroMeanView,
-    /// One row per day of the period, oldest first.
-    pub protein_days: Vec<MacroDayView>,
+    pub protein: MacroBlockView,
+    pub carbs: MacroBlockView,
+    pub fat: MacroBlockView,
 }
 
 impl MacroPeriodView {
@@ -336,11 +362,9 @@ impl MacroPeriodView {
         period: MacroPeriod,
     ) -> Result<Self, DuplicateIntakeDate> {
         Ok(Self {
-            protein: MacroMeanView::from(protein_mean(intakes, today, period)?),
-            protein_days: protein_days(intakes, today, period)?
-                .into_iter()
-                .map(MacroDayView::from)
-                .collect(),
+            protein: MacroBlockView::new(today, intakes, period, MacroKind::Protein)?,
+            carbs: MacroBlockView::new(today, intakes, period, MacroKind::Carbs)?,
+            fat: MacroBlockView::new(today, intakes, period, MacroKind::Fat)?,
         })
     }
 }
@@ -1114,7 +1138,7 @@ mod tests {
     fn m12_summary_carries_a_seven_day_and_a_fifteen_day_period() {
         let eight_days_back = macros("2026-11-01", 1000, 0, 0, None);
         let summary = MacroSummary::new(day("2026-11-09"), &[eight_days_back]).unwrap();
-        assert_eq!(summary.seven_days.protein, MacroMeanView::Absent);
+        assert_eq!(summary.seven_days.protein.mean, MacroMeanView::Absent);
         assert_eq!(summary.seven_days.protein.days.len(), 7);
         assert_eq!(
             summary.fifteen_days.protein.mean,
@@ -1277,7 +1301,7 @@ mod tests {
     fn m3_summary_without_intake_in_the_window_is_absent_not_zero() {
         let today_only = macros("2026-11-09", 1500, 0, 0, None);
         let summary = MacroSummary::new(day("2026-11-09"), &[today_only]).unwrap();
-        assert_eq!(summary.seven_days.protein, MacroMeanView::Absent);
+        assert_eq!(summary.seven_days.protein.mean, MacroMeanView::Absent);
     }
 
     #[test]
