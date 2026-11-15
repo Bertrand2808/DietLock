@@ -3,9 +3,9 @@
 
 use dietlock_core::{
     ACTIVITY_NOTE_MAX_CHARS, ActivityDraft, Day, DuplicateDate, DuplicateIntakeDate,
-    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroWeek, ProposedIntake,
+    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroDay, MacroWeek, ProposedIntake,
     TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert,
-    display_tenth_kg, energy_kcal, energy_week, protein_week, trend, variation,
+    display_tenth_kg, energy_kcal, energy_week, protein_days, protein_week, trend, variation,
 };
 use dietlock_store::StoreError;
 use serde::{Deserialize, Serialize};
@@ -286,11 +286,44 @@ impl From<Option<MacroWeek>> for MacroWeekView {
     }
 }
 
-/// Macro summaries of the « Graphiques » screen. M1–M4.
+/// One bar of the macro chart. `tenth_g` and `text` are `None` for a day without intake.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroDayView {
+    pub date: String,
+    /// `lun. 9`.
+    pub label: String,
+    pub tenth_g: Option<u16>,
+    /// `142,5 g`.
+    pub text: Option<String>,
+}
+
+impl From<MacroDay> for MacroDayView {
+    fn from(day: MacroDay) -> Self {
+        let date = day.date();
+        let weekday = french_date(date)
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        Self {
+            date: date.to_string(),
+            label: format!("{weekday} {}", date.day_number()),
+            tenth_g: day.protein_tenth_g(),
+            text: day
+                .protein_tenth_g()
+                .map(|tenth| format!("{} g", format_trimmed(u32::from(tenth), 10))),
+        }
+    }
+}
+
+/// Macro summaries of the « Graphiques » screen. M1–M10.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MacroSummary {
     pub protein: MacroWeekView,
+    /// The 7 days ending yesterday, oldest first.
+    pub protein_days: Vec<MacroDayView>,
 }
 
 impl MacroSummary {
@@ -298,6 +331,10 @@ impl MacroSummary {
     pub fn new(today: Day, intakes: &[Intake]) -> Result<Self, DuplicateIntakeDate> {
         Ok(Self {
             protein: MacroWeekView::from(protein_week(intakes, today)?),
+            protein_days: protein_days(intakes, today)?
+                .into_iter()
+                .map(MacroDayView::from)
+                .collect(),
         })
     }
 }
