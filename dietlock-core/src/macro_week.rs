@@ -11,6 +11,15 @@ use crate::intake::Intake;
 
 const TENTHS_PER_GRAM: i64 = 10;
 
+fn reject_duplicate_dates(intakes: &[Intake]) -> Result<(), DuplicateIntakeDate> {
+    let mut seen = HashSet::new();
+    if intakes.iter().all(|intake| seen.insert(intake.date())) {
+        Ok(())
+    } else {
+        Err(DuplicateIntakeDate)
+    }
+}
+
 // Returns the whole-gram mean and the number of intakes counted.
 fn protein_mean_ending(intakes: &[Intake], end: Day) -> Option<(u32, u32)> {
     let from = end.minus_days(ENERGY_WEEK_DAYS - 1)?;
@@ -53,6 +62,48 @@ impl MacroWeek {
     }
 }
 
+/// Protein of one day of the window. `None` is a day without intake: a hole, not 0 g.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MacroDay {
+    date: Day,
+    protein_tenth_g: Option<u16>,
+}
+
+impl MacroDay {
+    pub fn date(self) -> Day {
+        self.date
+    }
+
+    /// Tenths of a gram. `Some(0)` is a day entered at 0 g.
+    pub fn protein_tenth_g(self) -> Option<u16> {
+        self.protein_tenth_g
+    }
+}
+
+/// Protein of each of the 7 days ending yesterday, oldest first. M7, M8.
+///
+/// # Errors
+///
+/// `Err` if any date appears twice (S2).
+pub fn protein_days(intakes: &[Intake], today: Day) -> Result<Vec<MacroDay>, DuplicateIntakeDate> {
+    reject_duplicate_dates(intakes)?;
+    let Some(yesterday) = today.previous() else {
+        return Ok(Vec::new());
+    };
+    let days = (0..ENERGY_WEEK_DAYS)
+        .rev()
+        .filter_map(|back| yesterday.minus_days(back))
+        .map(|date| MacroDay {
+            date,
+            protein_tenth_g: intakes
+                .iter()
+                .find(|intake| intake.date() == date)
+                .map(Intake::protein_tenth_g),
+        })
+        .collect();
+    Ok(days)
+}
+
 /// Protein of the 7 days ending yesterday, compared with the 7 days before that.
 ///
 /// `Ok(None)` when yesterday's window has no intake: that is not 0 g.
@@ -64,10 +115,7 @@ pub fn protein_week(
     intakes: &[Intake],
     today: Day,
 ) -> Result<Option<MacroWeek>, DuplicateIntakeDate> {
-    let mut seen = HashSet::new();
-    if !intakes.iter().all(|intake| seen.insert(intake.date())) {
-        return Err(DuplicateIntakeDate);
-    }
+    reject_duplicate_dates(intakes)?;
     let Some(yesterday) = today.previous() else {
         return Ok(None);
     };
@@ -105,6 +153,63 @@ mod tests {
 
     fn week(intakes: &[Intake]) -> Option<MacroWeek> {
         protein_week(intakes, day(TODAY)).unwrap()
+    }
+
+    fn days_of(intakes: &[Intake]) -> Vec<(String, Option<u16>)> {
+        protein_days(intakes, day(TODAY))
+            .unwrap()
+            .into_iter()
+            .map(|d| (d.date().to_string(), d.protein_tenth_g()))
+            .collect()
+    }
+
+    #[test]
+    fn m7_days_are_the_seven_days_ending_yesterday_oldest_first() {
+        let listed: Vec<String> = days_of(&[]).into_iter().map(|(date, _)| date).collect();
+        assert_eq!(
+            listed,
+            [
+                "2026-11-02",
+                "2026-11-03",
+                "2026-11-04",
+                "2026-11-05",
+                "2026-11-06",
+                "2026-11-07",
+                "2026-11-08"
+            ]
+        );
+    }
+
+    #[test]
+    fn m7_today_and_older_days_are_not_in_the_chart() {
+        let intakes = [protein(TODAY, 900), protein("2026-11-01", 800)];
+        assert!(days_of(&intakes).iter().all(|(_, value)| value.is_none()));
+    }
+
+    #[test]
+    fn m8_a_day_without_intake_is_a_hole_not_zero() {
+        let found = days_of(&[protein("2026-11-04", 120)]);
+        assert_eq!(found[2], ("2026-11-04".to_owned(), Some(1200)));
+        assert_eq!(found[0].1, None);
+        assert_eq!(found[6].1, None);
+    }
+
+    #[test]
+    fn m8_a_day_at_zero_grams_is_a_value_of_zero() {
+        let found = days_of(&[protein("2026-11-05", 0)]);
+        assert_eq!(found[3].1, Some(0));
+    }
+
+    #[test]
+    fn m10_a_day_keeps_its_tenths_of_a_gram() {
+        let found = days_of(&[protein_tenths("2026-11-08", 1425)]);
+        assert_eq!(found[6].1, Some(1425));
+    }
+
+    #[test]
+    fn s2_days_with_two_intakes_on_one_date_is_an_error() {
+        let intakes = [protein("2026-11-08", 100), protein("2026-11-08", 50)];
+        assert_eq!(protein_days(&intakes, day(TODAY)), Err(DuplicateIntakeDate));
     }
 
     #[test]

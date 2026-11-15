@@ -27,6 +27,7 @@ import {
 import { renderChart } from "./chart.js";
 import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { energyCopy } from "./energy.js";
+import { renderMacroChart } from "./macro_chart.js";
 import { macroCopy } from "./macros.js";
 import { savesOnEnter, screenShortcut } from "./keys.js";
 import {
@@ -407,10 +408,10 @@ function renderWeight() {
   piece("2", "Graphiques");
   renderChart($("chartbox"), days, curve.notice, span);
   paintChartMessage(curve.notice, days);
-  renderMacroBlock("protein", macros?.protein);
+  renderMacroBlock("protein", macros?.protein, macros?.proteinDays ?? []);
 }
 
-function renderMacroBlock(name, week) {
+function renderMacroBlock(name, week, chartDays) {
   const copy = macroCopy(week);
   const figure = $(`macro-${name}-figure`);
   const note = $(`macro-${name}-note`);
@@ -427,6 +428,7 @@ function renderMacroBlock(name, week) {
     if (copy.note) note.append(document.createElement("br"));
   }
   if (copy.note) note.append(copy.note);
+  renderMacroChart($(`macro-${name}-chart`), chartDays, week?.kind === "present" ? week.meanG : null);
 }
 
 function renderWeightError(message) {

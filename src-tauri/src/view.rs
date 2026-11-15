@@ -3,9 +3,9 @@
 
 use dietlock_core::{
     ACTIVITY_NOTE_MAX_CHARS, ActivityDraft, Day, DuplicateDate, DuplicateIntakeDate,
-    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroWeek, ProposedIntake,
+    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroDay, MacroWeek, ProposedIntake,
     TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert,
-    display_tenth_kg, energy_kcal, energy_week, protein_week, trend, variation,
+    display_tenth_kg, energy_kcal, energy_week, protein_days, protein_week, trend, variation,
 };
 use dietlock_store::StoreError;
 use serde::{Deserialize, Serialize};
@@ -286,11 +286,44 @@ impl From<Option<MacroWeek>> for MacroWeekView {
     }
 }
 
-/// Macro summaries of the « Graphiques » screen. M1–M4.
+/// One bar of the macro chart. `tenth_g` and `text` are `None` for a day without intake.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroDayView {
+    pub date: String,
+    /// `lun. 9`.
+    pub label: String,
+    pub tenth_g: Option<u16>,
+    /// `142,5 g`.
+    pub text: Option<String>,
+}
+
+impl From<MacroDay> for MacroDayView {
+    fn from(day: MacroDay) -> Self {
+        let date = day.date();
+        let weekday = french_date(date)
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        Self {
+            date: date.to_string(),
+            label: format!("{weekday} {}", date.day_number()),
+            tenth_g: day.protein_tenth_g(),
+            text: day
+                .protein_tenth_g()
+                .map(|tenth| format!("{} g", format_trimmed(u32::from(tenth), 10))),
+        }
+    }
+}
+
+/// Macro summaries of the « Graphiques » screen. M1–M10.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MacroSummary {
     pub protein: MacroWeekView,
+    /// The 7 days ending yesterday, oldest first.
+    pub protein_days: Vec<MacroDayView>,
 }
 
 impl MacroSummary {
@@ -298,6 +331,10 @@ impl MacroSummary {
     pub fn new(today: Day, intakes: &[Intake]) -> Result<Self, DuplicateIntakeDate> {
         Ok(Self {
             protein: MacroWeekView::from(protein_week(intakes, today)?),
+            protein_days: protein_days(intakes, today)?
+                .into_iter()
+                .map(MacroDayView::from)
+                .collect(),
         })
     }
 }
@@ -1046,6 +1083,54 @@ mod tests {
         // Previous week is J−14 to J−8, so the first day read is J−14.
         assert_eq!(macro_summary_start(day("2026-11-09")), day("2026-10-26"));
         assert_eq!(macro_summary_start(day("2026-03-01")), day("2026-02-15"));
+    }
+
+    #[test]
+    fn m7_summary_lists_seven_days_ending_yesterday_with_a_short_label() {
+        let summary = MacroSummary::new(day("2026-11-09"), &[]).unwrap();
+        let labels: Vec<&str> = summary
+            .protein_days
+            .iter()
+            .map(|d| d.label.as_str())
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                "lun. 2", "mar. 3", "mer. 4", "jeu. 5", "ven. 6", "sam. 7", "dim. 8"
+            ]
+        );
+        assert_eq!(summary.protein_days[0].date, "2026-11-02");
+        assert_eq!(summary.protein_days[6].date, "2026-11-08");
+    }
+
+    #[test]
+    fn m8_summary_day_without_intake_has_no_value_and_no_text() {
+        let summary = MacroSummary::new(day("2026-11-09"), &[]).unwrap();
+        assert!(
+            summary
+                .protein_days
+                .iter()
+                .all(|d| d.tenth_g.is_none() && d.text.is_none())
+        );
+    }
+
+    #[test]
+    fn m8_summary_day_at_zero_grams_has_a_value_and_a_text() {
+        let zero = macros("2026-11-05", 0, 0, 0, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[zero]).unwrap();
+        let entered = &summary.protein_days[3];
+        assert_eq!(entered.tenth_g, Some(0));
+        assert_eq!(entered.text.as_deref(), Some("0 g"));
+    }
+
+    #[test]
+    fn m10_summary_day_text_is_grams_with_a_decimal_comma() {
+        let whole = macros("2026-11-07", 1420, 0, 0, None);
+        let decimal = macros("2026-11-08", 1425, 0, 0, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[whole, decimal]).unwrap();
+        assert_eq!(summary.protein_days[5].text.as_deref(), Some("142 g"));
+        assert_eq!(summary.protein_days[6].text.as_deref(), Some("142,5 g"));
+        assert_eq!(summary.protein_days[6].tenth_g, Some(1425));
     }
 
     #[test]

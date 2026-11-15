@@ -6,6 +6,7 @@ All notable changes to DietLock are listed here. Format based on [Keep a Changel
 
 ### Added
 
+- The « Protéines » block of « Graphiques » has a bar chart of the 7 days ending yesterday: one bar per day with its weekday and value, a dashed line for the mean, a hole for a day without intake, and a short stub for a day entered at 0 g. With no intake in the period it shows a sentence instead of an empty chart (M7–M11).
 - The weight screen is now called « Graphiques ». Under the weight curve, a « Protéines » block shows the mean protein per day of the 7 days ending yesterday and the signed gap with the 7 days before. A day without an intake is skipped. An intake of 0 g counts. No intake in the window shows « — » instead of 0. No intake in the previous week shows no gap (M1–M6).
 - The home screen shows, beside the weight trend, the mean energy of the 7 days ending yesterday, how many of those days were entered, and the signed gap with the 7 days before. A day without an intake is skipped. An intake of 0 kcal counts. No intake in the window shows a sentence instead of 0. No intake in the previous week says there is no comparison (E1–E6).
 - A "＋ Activité" button in the title bar opens a form to record all the activities of a day at once: a type (Marche, Course, Mobilité, Muscu, Vélo, Autre) and an optional note per row, for today or a past day. Saving adds to the day's activities and leaves the weigh-in and the intake alone. The database moves to schema 3 (AC1–AC6).
