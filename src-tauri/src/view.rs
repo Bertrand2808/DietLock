@@ -993,6 +993,49 @@ mod tests {
         );
     }
 
+    #[test]
+    fn m3_summary_without_intake_in_the_window_is_absent_not_zero() {
+        let today_only = macros("2026-11-09", 1500, 0, 0, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[today_only]).unwrap();
+        assert_eq!(summary.protein, MacroWeekView::Absent);
+    }
+
+    #[test]
+    fn m2_summary_counts_a_zero_gram_day_and_keeps_the_gap_optional() {
+        let zero = macros("2026-11-08", 0, 0, 0, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[zero]).unwrap();
+        assert_eq!(
+            summary.protein,
+            MacroWeekView::Present {
+                mean_g: 0,
+                days: 1,
+                gap_g: None,
+            }
+        );
+    }
+
+    #[test]
+    fn m4_summary_reads_protein_and_compares_with_the_previous_week() {
+        let current = macros("2026-11-08", 1420, 3000, 800, None);
+        let earlier = macros("2026-11-01", 1300, 100, 100, None);
+        let summary = MacroSummary::new(day("2026-11-09"), &[current, earlier]).unwrap();
+        assert_eq!(
+            summary.protein,
+            MacroWeekView::Present {
+                mean_g: 142,
+                days: 1,
+                gap_g: Some(12),
+            }
+        );
+    }
+
+    #[test]
+    fn s2_summary_with_two_intakes_on_one_date_is_an_error() {
+        let first = macros("2026-11-08", 1000, 0, 0, None);
+        let second = macros("2026-11-08", 2000, 0, 0, None);
+        assert!(MacroSummary::new(day("2026-11-09"), &[first, second]).is_err());
+    }
+
     fn macros(d: &str, protein: u16, carbs: u16, fat: u16, water: Option<u16>) -> Intake {
         Intake::new(day(d), protein, carbs, fat, water).unwrap()
     }
