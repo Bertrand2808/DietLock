@@ -3,9 +3,30 @@
 //! Same window and same absence rules as the energy mean (E1–E5), applied to
 //! the protein of each intake. Computed on demand and never stored.
 
+use std::collections::HashSet;
+
 use crate::day::Day;
-use crate::energy_week::DuplicateIntakeDate;
+use crate::energy_week::{DuplicateIntakeDate, ENERGY_WEEK_DAYS, div_round_half_away};
 use crate::intake::Intake;
+
+const TENTHS_PER_GRAM: i64 = 10;
+
+/// Whole-gram mean of the protein of the intakes in the window ending at `end`.
+/// The second value is the number of intakes counted.
+fn protein_mean_ending(intakes: &[Intake], end: Day) -> Option<(u32, u32)> {
+    let from = end.minus_days(ENERGY_WEEK_DAYS - 1)?;
+    let (sum_tenths, days) = intakes
+        .iter()
+        .filter(|intake| intake.date() >= from && intake.date() <= end)
+        .fold((0i64, 0i64), |(sum, days), intake| {
+            (sum + i64::from(intake.protein_tenth_g()), days + 1)
+        });
+    if days == 0 {
+        return None;
+    }
+    let mean_g = div_round_half_away(sum_tenths, days * TENTHS_PER_GRAM);
+    Some((u32::try_from(mean_g).ok()?, u32::try_from(days).ok()?))
+}
 
 /// Mean of one macro over the intakes of a window, in whole grams. M1–M4.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,8 +65,27 @@ pub fn protein_week(
     intakes: &[Intake],
     today: Day,
 ) -> Result<Option<MacroWeek>, DuplicateIntakeDate> {
-    let _ = (intakes, today);
-    unimplemented!("protein_week")
+    let mut seen = HashSet::new();
+    if !intakes.iter().all(|intake| seen.insert(intake.date())) {
+        return Err(DuplicateIntakeDate);
+    }
+    let Some(yesterday) = today.previous() else {
+        return Ok(None);
+    };
+    let Some((mean_g, days)) = protein_mean_ending(intakes, yesterday) else {
+        return Ok(None);
+    };
+    let gap_g = yesterday
+        .minus_days(ENERGY_WEEK_DAYS)
+        .and_then(|previous_end| protein_mean_ending(intakes, previous_end))
+        .and_then(|(previous_mean_g, _)| {
+            Some(i32::try_from(mean_g).ok()? - i32::try_from(previous_mean_g).ok()?)
+        });
+    Ok(Some(MacroWeek {
+        mean_g,
+        days,
+        gap_g,
+    }))
 }
 
 #[cfg(test)]

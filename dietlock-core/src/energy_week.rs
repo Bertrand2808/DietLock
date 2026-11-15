@@ -31,7 +31,7 @@ impl fmt::Display for DuplicateIntakeDate {
 impl std::error::Error for DuplicateIntakeDate {}
 
 /// Integer division rounding a half away from zero. `den` must be positive.
-fn div_round_half_away(num: i64, den: i64) -> i64 {
+pub(crate) fn div_round_half_away(num: i64, den: i64) -> i64 {
     debug_assert!(den > 0);
     let q = (num.abs() * 2 + den) / (den * 2);
     if num < 0 { -q } else { q }
