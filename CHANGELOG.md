@@ -6,6 +6,7 @@ All notable changes to DietLock are listed here. Format based on [Keep a Changel
 
 ### Added
 
+- « Graphiques » shows three blocks under the weight curve: Protéines, Glucides and Lipides, each with its mean per day, its signed gap and its bar chart. The 7 j / 15 j selector applies to the three at once. The blocks are stacked and the screen scrolls (M14).
 - The macros on « Graphiques » have their own 7 j / 15 j selector, on 7 j by default. In 15 j the mean covers the 15 days ending yesterday, the gap is against the 15 days before and says « vs 15 jours d'avant », and the chart has 15 bars with the day number on the axis. The weight selector (15 j / 30 j) is separate. The choice is not kept after a restart (M12, M13).
 - The « Protéines » block of « Graphiques » has a bar chart of the 7 days ending yesterday: one bar per day with its weekday and value, a dashed line for the mean, a hole for a day without intake, and a short stub for a day entered at 0 g. With no intake in the period it shows a sentence instead of an empty chart (M7–M11).
 - The weight screen is now called « Graphiques ». Under the weight curve, a « Protéines » block shows the mean protein per day of the 7 days ending yesterday and the signed gap with the 7 days before. A day without an intake is skipped. An intake of 0 g counts. No intake in the window shows « — » instead of 0. No intake in the previous week shows no gap (M1–M6).

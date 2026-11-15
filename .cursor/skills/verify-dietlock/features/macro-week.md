@@ -1,9 +1,10 @@
 # Macro period
 
-The `Graphiques` screen shows, under the weight curve, a `Macros` header (`#macro-title`) with a `7 j` / `15 j` selector (`#macro-seg`), then a `Protéines` block for the selected period. The block has the mean protein per day of the period ending yesterday, how many of those days were entered, a pill for the signed gap with the period before, and a bar chart of the days. A day without macros is left out. A day entered at 0 g counts. No intake in the period is `—`, not 0. No intake in the previous period hides the pill. A gap of 0 is the pill `0 vs semaine d'avant` (7 j) or `0 vs 15 jours d'avant` (15 j). The period is 7 j on launch.
+The `Graphiques` screen shows, under the weight curve, a `Macros` header (`#macro-title`) with a `7 j` / `15 j` selector (`#macro-seg`), then three blocks for the selected period: `Protéines`, `Glucides`, `Lipides`, in that order. Each block has the mean of its macro per day of the period ending yesterday, how many of those days were entered, a pill for the signed gap with the period before, and a bar chart of the days. A day without macros is left out. A day entered at 0 g counts. No intake in the period is `—`, not 0. No intake in the previous period hides the pill. A gap of 0 is the pill `0 vs semaine d'avant` (7 j) or `0 vs 15 jours d'avant` (15 j). The period is 7 j on launch.
 
 ## Sub-features
 
+- `macro-three-blocks` shows `#macro-protein`, `#macro-carbs` and `#macro-fat` stacked in that order, under `#macro-seg`. Clicking `15 j` redraws all three. With an intake of 150 / 200 / 60 g on yesterday, the figures read `150 g/j`, `200 g/j` and `60 g/j`, with no mix between the blocks. The screen scrolls to reach the last block. The other bullets name the protein block's ids; the carbs block uses `#macro-carbs-…` and the fat block `#macro-fat-…`, with the same suffixes (`figure`, `note`, `pill`, `chart`, `span`).
 - `macro-period` is the selector `#macro-seg` with two buttons, `[data-macro-span="7"]` (`7 j`, pressed on launch) and `[data-macro-span="15"]` (`15 j`). Clicking `15 j` presses it, sets `#macro-protein-span` to `15 derniers jours, hier compris`, and redraws the block for 15 days. It never changes the weight selector `#span-seg`, and `#span-seg` never changes it.
 - `macro-mean` shows `#macro-protein-figure` as `N g/j` and `#macro-protein-note` ending with `N jours saisis`. When a pill is shown, it comes first in the note.
 - `macro-gap` shows `#macro-protein-pill` such as `+12 vs semaine d'avant` (7 j) or `+12 vs 15 jours d'avant` (15 j) when the previous period has intakes. Class `up` when positive, `down` when negative, `even` when 0.
@@ -25,6 +26,7 @@ Preconditions:
 - `dietlock-verify doctor` printed `doctor PASS`.
 - Read today from `#weigh-chip`'s `data-date`. The period is the 7 or 15 days ending yesterday, and the previous period is the same number of days before it.
 
+- **Read the other blocks.** Every read below applies to carbs and fat with their own ids. Scroll `#macro-fat` into view before the screenshot: `eval 'document.getElementById("macro-fat").scrollIntoView(); "scrolled"'`.
 - **Read an empty period.** Open `Graphiques` with `eval 'document.getElementById("tab-weight").click()'`. `#macro-protein-figure` is `—` and `#macro-protein-note` is empty.
 - **Enter days.** Enter intakes the way `energy-week.md` does, with known protein.
 - **Read the mean.** `#macro-protein-figure` is the mean in whole grams plus ` g/j`. `#macro-protein-note` ends with `N jours saisis` or `1 jour saisi`.

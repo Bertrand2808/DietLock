@@ -25,7 +25,7 @@ pub use entry_save::{SaveDecision, decide_intake, decide_water, decide_weigh_in}
 pub use error::ValidationError;
 pub use input::{parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg};
 pub use intake::{Intake, MACRO_G_MAX, MACRO_TENTH_G_MAX, WATER_ML_MAX};
-pub use macro_week::{MacroDay, MacroMean, MacroPeriod, protein_days, protein_mean};
+pub use macro_week::{MacroDay, MacroKind, MacroMean, MacroPeriod, macro_days, macro_mean};
 pub use proposed_date::{
     IntakePresence, ProposedIntake, SwitchHour, check_not_future, proposed_intake_date,
     proposed_weigh_in_date,

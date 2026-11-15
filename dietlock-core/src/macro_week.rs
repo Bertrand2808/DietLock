@@ -1,7 +1,7 @@
-//! Mean protein of the period ending yesterday, and the gap with the period before.
+//! Mean of one macro over the period ending yesterday, and the gap with the period before.
 //!
 //! The absence and rounding rules of the energy mean (E1–E5), applied to the
-//! protein of each intake, over the period of M12. Computed on demand and never stored.
+//! chosen macro of each intake, over the period of M12. Computed on demand and never stored.
 
 use std::collections::HashSet;
 
@@ -27,6 +27,24 @@ impl MacroPeriod {
     }
 }
 
+/// The macro of an intake that a mean or a list reads. M14.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MacroKind {
+    Protein,
+    Carbs,
+    Fat,
+}
+
+impl MacroKind {
+    fn tenth_g(self, intake: &Intake) -> u16 {
+        match self {
+            Self::Protein => intake.protein_tenth_g(),
+            Self::Carbs => intake.carbs_tenth_g(),
+            Self::Fat => intake.fat_tenth_g(),
+        }
+    }
+}
+
 fn reject_duplicate_dates(intakes: &[Intake]) -> Result<(), DuplicateIntakeDate> {
     let mut seen = HashSet::new();
     if intakes.iter().all(|intake| seen.insert(intake.date())) {
@@ -37,13 +55,18 @@ fn reject_duplicate_dates(intakes: &[Intake]) -> Result<(), DuplicateIntakeDate>
 }
 
 // Returns the whole-gram mean and the number of intakes counted.
-fn protein_mean_ending(intakes: &[Intake], end: Day, period: MacroPeriod) -> Option<(u32, u32)> {
+fn mean_ending(
+    intakes: &[Intake],
+    end: Day,
+    period: MacroPeriod,
+    kind: MacroKind,
+) -> Option<(u32, u32)> {
     let from = end.minus_days(period.days() - 1)?;
     let (sum_tenths, days) = intakes
         .iter()
         .filter(|intake| intake.date() >= from && intake.date() <= end)
         .fold((0i64, 0i64), |(sum, days), intake| {
-            (sum + i64::from(intake.protein_tenth_g()), days + 1)
+            (sum + i64::from(kind.tenth_g(intake)), days + 1)
         });
     if days == 0 {
         return None;
@@ -78,11 +101,11 @@ impl MacroMean {
     }
 }
 
-/// Protein of one day of the window. `None` is a day without intake: a hole, not 0 g.
+/// One macro on one day of the window. `None` is a day without intake: a hole, not 0 g.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MacroDay {
     date: Day,
-    protein_tenth_g: Option<u16>,
+    tenth_g: Option<u16>,
 }
 
 impl MacroDay {
@@ -91,20 +114,21 @@ impl MacroDay {
     }
 
     /// Tenths of a gram. `Some(0)` is a day entered at 0 g.
-    pub fn protein_tenth_g(self) -> Option<u16> {
-        self.protein_tenth_g
+    pub fn tenth_g(self) -> Option<u16> {
+        self.tenth_g
     }
 }
 
-/// Protein of each day of the period ending yesterday, oldest first. M7, M8, M12.
+/// One macro on each day of the period ending yesterday, oldest first. M7, M8, M12, M14.
 ///
 /// # Errors
 ///
 /// `Err` if any date appears twice (S2).
-pub fn protein_days(
+pub fn macro_days(
     intakes: &[Intake],
     today: Day,
     period: MacroPeriod,
+    kind: MacroKind,
 ) -> Result<Vec<MacroDay>, DuplicateIntakeDate> {
     reject_duplicate_dates(intakes)?;
     let Some(yesterday) = today.previous() else {
@@ -115,37 +139,38 @@ pub fn protein_days(
         .filter_map(|back| yesterday.minus_days(back))
         .map(|date| MacroDay {
             date,
-            protein_tenth_g: intakes
+            tenth_g: intakes
                 .iter()
                 .find(|intake| intake.date() == date)
-                .map(Intake::protein_tenth_g),
+                .map(|intake| kind.tenth_g(intake)),
         })
         .collect();
     Ok(days)
 }
 
-/// Protein of the period ending yesterday, compared with the period of the same length before it.
+/// One macro over the period ending yesterday, compared with the period of the same length before it.
 ///
 /// `Ok(None)` when the period has no intake: that is not 0 g.
 ///
 /// # Errors
 ///
 /// `Err` if any date appears twice, in or out of the windows (S2).
-pub fn protein_mean(
+pub fn macro_mean(
     intakes: &[Intake],
     today: Day,
     period: MacroPeriod,
+    kind: MacroKind,
 ) -> Result<Option<MacroMean>, DuplicateIntakeDate> {
     reject_duplicate_dates(intakes)?;
     let Some(yesterday) = today.previous() else {
         return Ok(None);
     };
-    let Some((mean_g, days)) = protein_mean_ending(intakes, yesterday, period) else {
+    let Some((mean_g, days)) = mean_ending(intakes, yesterday, period, kind) else {
         return Ok(None);
     };
     let gap_g = yesterday
         .minus_days(period.days())
-        .and_then(|previous_end| protein_mean_ending(intakes, previous_end, period))
+        .and_then(|previous_end| mean_ending(intakes, previous_end, period, kind))
         .and_then(|(previous_mean_g, _)| {
             Some(i32::try_from(mean_g).ok()? - i32::try_from(previous_mean_g).ok()?)
         });
@@ -173,18 +198,115 @@ mod tests {
     const TODAY: &str = "2026-11-09";
 
     fn week(intakes: &[Intake]) -> Option<MacroMean> {
-        protein_mean(intakes, day(TODAY), MacroPeriod::SevenDays).unwrap()
+        macro_mean(
+            intakes,
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Protein,
+        )
+        .unwrap()
     }
 
     fn days_of(intakes: &[Intake]) -> Vec<(String, Option<u16>)> {
-        protein_days(intakes, day(TODAY), MacroPeriod::SevenDays)
-            .unwrap()
-            .into_iter()
-            .map(|d| (d.date().to_string(), d.protein_tenth_g()))
-            .collect()
+        macro_days(
+            intakes,
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Protein,
+        )
+        .unwrap()
+        .into_iter()
+        .map(|d| (d.date().to_string(), d.tenth_g()))
+        .collect()
     }
 
     const FIFTEEN: MacroPeriod = MacroPeriod::FifteenDays;
+
+    /// 150 g of protein, 200 g of carbs, 60 g of fat.
+    fn all_macros(date: &str) -> Intake {
+        Intake::new(day(date), 1500, 2000, 600, None).unwrap()
+    }
+
+    #[test]
+    fn m14_each_macro_reads_its_own_column() {
+        let intakes = [all_macros("2026-11-08")];
+        for (kind, expected) in [
+            (MacroKind::Protein, 150),
+            (MacroKind::Carbs, 200),
+            (MacroKind::Fat, 60),
+        ] {
+            let mean = macro_mean(&intakes, day(TODAY), MacroPeriod::SevenDays, kind);
+            assert_eq!(mean.unwrap().unwrap().mean_g(), expected, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn m14_each_macro_lists_its_own_daily_values() {
+        let intakes = [all_macros("2026-11-08")];
+        for (kind, expected) in [
+            (MacroKind::Protein, 1500),
+            (MacroKind::Carbs, 2000),
+            (MacroKind::Fat, 600),
+        ] {
+            let listed = macro_days(&intakes, day(TODAY), MacroPeriod::SevenDays, kind).unwrap();
+            assert_eq!(listed[6].tenth_g(), Some(expected), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn m14_the_gap_of_a_macro_compares_that_macro_only() {
+        // Carbs 200 g now and 150 g the week before, while protein is 150 g and 300 g.
+        let now = all_macros("2026-11-08");
+        let before = Intake::new(day("2026-11-01"), 3000, 1500, 0, None).unwrap();
+        let carbs = macro_mean(
+            &[now, before],
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Carbs,
+        );
+        assert_eq!(carbs.unwrap().unwrap().gap_g(), Some(50));
+        let protein = macro_mean(
+            &[now, before],
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Protein,
+        );
+        assert_eq!(protein.unwrap().unwrap().gap_g(), Some(-150));
+    }
+
+    #[test]
+    fn m14_a_macro_at_zero_in_one_column_is_a_value_not_a_hole() {
+        let intake = Intake::new(day("2026-11-08"), 1000, 0, 0, None).unwrap();
+        let carbs = macro_mean(
+            &[intake],
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Carbs,
+        );
+        assert_eq!(carbs.unwrap().unwrap().mean_g(), 0);
+        let listed = macro_days(
+            &[intake],
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Carbs,
+        )
+        .unwrap();
+        assert_eq!(listed[6].tenth_g(), Some(0));
+    }
+
+    #[test]
+    fn m14_a_macro_is_rounded_to_whole_grams_like_protein() {
+        // 100,0 g and 100,9 g of fat: mean 100,45 g, displayed 100.
+        let first = Intake::new(day("2026-11-07"), 0, 0, 1000, None).unwrap();
+        let second = Intake::new(day("2026-11-08"), 0, 0, 1009, None).unwrap();
+        let fat = macro_mean(
+            &[first, second],
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Fat,
+        );
+        assert_eq!(fat.unwrap().unwrap().mean_g(), 100);
+    }
 
     #[test]
     fn m12_period_lengths_are_seven_and_fifteen_days() {
@@ -194,7 +316,7 @@ mod tests {
 
     #[test]
     fn m12_fifteen_day_list_runs_from_fifteen_days_before_today_to_yesterday() {
-        let listed = protein_days(&[], day(TODAY), FIFTEEN).unwrap();
+        let listed = macro_days(&[], day(TODAY), FIFTEEN, MacroKind::Protein).unwrap();
         assert_eq!(listed.len(), 15);
         assert_eq!(listed[0].date().to_string(), "2026-10-25");
         assert_eq!(listed[14].date().to_string(), "2026-11-08");
@@ -203,17 +325,17 @@ mod tests {
     #[test]
     fn m12_fifteen_day_list_keeps_holes_and_zero_days() {
         let intakes = [protein("2026-10-30", 0), protein("2026-11-08", 90)];
-        let listed = protein_days(&intakes, day(TODAY), FIFTEEN).unwrap();
-        assert_eq!(listed[5].protein_tenth_g(), Some(0));
-        assert_eq!(listed[14].protein_tenth_g(), Some(900));
-        assert_eq!(listed[6].protein_tenth_g(), None);
+        let listed = macro_days(&intakes, day(TODAY), FIFTEEN, MacroKind::Protein).unwrap();
+        assert_eq!(listed[5].tenth_g(), Some(0));
+        assert_eq!(listed[14].tenth_g(), Some(900));
+        assert_eq!(listed[6].tenth_g(), None);
     }
 
     #[test]
     fn m12_an_intake_eight_days_back_counts_in_fifteen_days_only() {
         let intakes = [protein("2026-11-01", 100)];
         assert_eq!(week(&intakes), None);
-        let fifteen = protein_mean(&intakes, day(TODAY), FIFTEEN)
+        let fifteen = macro_mean(&intakes, day(TODAY), FIFTEEN, MacroKind::Protein)
             .unwrap()
             .unwrap();
         assert_eq!(fifteen.mean_g(), 100);
@@ -231,7 +353,7 @@ mod tests {
             protein("2026-10-10", 100),
             protein("2026-10-09", 900),
         ];
-        let result = protein_mean(&intakes, day(TODAY), FIFTEEN)
+        let result = macro_mean(&intakes, day(TODAY), FIFTEEN, MacroKind::Protein)
             .unwrap()
             .unwrap();
         assert_eq!(result.mean_g(), 150);
@@ -243,7 +365,7 @@ mod tests {
     fn m12_fifteen_day_gap_is_absent_when_the_previous_period_is_empty() {
         // 10-09 (J−31) is outside the previous fifteen days.
         let intakes = [protein("2026-11-08", 120), protein("2026-10-09", 80)];
-        let result = protein_mean(&intakes, day(TODAY), FIFTEEN)
+        let result = macro_mean(&intakes, day(TODAY), FIFTEEN, MacroKind::Protein)
             .unwrap()
             .unwrap();
         assert_eq!(result.gap_g(), None);
@@ -251,7 +373,10 @@ mod tests {
 
     #[test]
     fn m12_fifteen_day_period_with_no_intake_is_not_a_mean_of_zero() {
-        assert_eq!(protein_mean(&[], day(TODAY), FIFTEEN), Ok(None));
+        assert_eq!(
+            macro_mean(&[], day(TODAY), FIFTEEN, MacroKind::Protein),
+            Ok(None)
+        );
     }
 
     #[test]
@@ -301,7 +426,12 @@ mod tests {
     fn s2_days_with_two_intakes_on_one_date_is_an_error() {
         let intakes = [protein("2026-11-08", 100), protein("2026-11-08", 50)];
         assert_eq!(
-            protein_days(&intakes, day(TODAY), MacroPeriod::SevenDays),
+            macro_days(
+                &intakes,
+                day(TODAY),
+                MacroPeriod::SevenDays,
+                MacroKind::Protein
+            ),
             Err(DuplicateIntakeDate)
         );
     }
@@ -427,10 +557,20 @@ mod tests {
             protein("2026-10-26", 80),
             protein("2026-01-01", 10),
         ];
-        let expected = protein_mean(&intakes, day(TODAY), MacroPeriod::SevenDays);
+        let expected = macro_mean(
+            &intakes,
+            day(TODAY),
+            MacroPeriod::SevenDays,
+            MacroKind::Protein,
+        );
         intakes.reverse();
         assert_eq!(
-            protein_mean(&intakes, day(TODAY), MacroPeriod::SevenDays),
+            macro_mean(
+                &intakes,
+                day(TODAY),
+                MacroPeriod::SevenDays,
+                MacroKind::Protein
+            ),
             expected
         );
     }
@@ -439,7 +579,12 @@ mod tests {
     fn s2_duplicate_date_in_the_window_is_an_error() {
         let intakes = [protein("2026-11-08", 100), protein("2026-11-08", 50)];
         assert_eq!(
-            protein_mean(&intakes, day(TODAY), MacroPeriod::SevenDays),
+            macro_mean(
+                &intakes,
+                day(TODAY),
+                MacroPeriod::SevenDays,
+                MacroKind::Protein
+            ),
             Err(DuplicateIntakeDate)
         );
     }
@@ -452,7 +597,12 @@ mod tests {
             protein("2026-09-01", 20),
         ];
         assert_eq!(
-            protein_mean(&intakes, day(TODAY), MacroPeriod::SevenDays),
+            macro_mean(
+                &intakes,
+                day(TODAY),
+                MacroPeriod::SevenDays,
+                MacroKind::Protein
+            ),
             Err(DuplicateIntakeDate)
         );
     }
