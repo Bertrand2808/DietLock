@@ -176,6 +176,10 @@ input {
   margin-top: 0;
 }
 
+.macro-card + .macro-card {
+  margin-top: 16px;
+}
+
 .macro-span {
   margin-left: 6px;
   font-weight: 400;

@@ -31,6 +31,13 @@ function previousPeriodName(periodDays) {
   return periodDays === 7 ? "semaine d'avant" : `${periodDays} jours d'avant`;
 }
 
+/** The macro blocks of « Graphiques », in screen order. `key` is the field of the summary. */
+export const MACRO_BLOCKS = [
+  { key: "protein", title: "Protéines" },
+  { key: "carbs", title: "Glucides" },
+  { key: "fat", title: "Lipides" },
+];
+
 export function macroPeriodCaption(periodDays) {
   return `${periodDays} derniers jours, hier compris`;
 }

@@ -29,7 +29,7 @@ import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "
 import { energyCopy } from "./energy.js";
 import { renderMacroChart } from "./macro_chart.js";
 import { pickPeriod } from "./macro_period.js";
-import { macroCopy, macroPeriodCaption } from "./macros.js";
+import { MACRO_BLOCKS, macroCopy, macroPeriodCaption } from "./macros.js";
 import { savesOnEnter, screenShortcut } from "./keys.js";
 import {
   blockStatus,
@@ -425,11 +425,14 @@ function paintMacroSpan() {
 function renderMacros() {
   paintMacroSpan();
   const period = pickPeriod(macros, macroSpan);
-  $("macro-protein-span").textContent = macroPeriodCaption(macroSpan);
-  renderMacroBlock("protein", period?.protein, period?.proteinDays ?? []);
+  for (const { key } of MACRO_BLOCKS) {
+    $(`macro-${key}-span`).textContent = macroPeriodCaption(macroSpan);
+    renderMacroBlock(key, period?.[key]);
+  }
 }
 
-function renderMacroBlock(name, mean, chartDays) {
+function renderMacroBlock(name, block) {
+  const mean = block?.mean;
   const copy = macroCopy(mean, macroSpan);
   const figure = $(`macro-${name}-figure`);
   const note = $(`macro-${name}-note`);
@@ -448,7 +451,7 @@ function renderMacroBlock(name, mean, chartDays) {
   if (copy.note) note.append(copy.note);
   renderMacroChart(
     $(`macro-${name}-chart`),
-    chartDays,
+    block?.days ?? [],
     mean?.kind === "present" ? mean.meanG : null,
     macroSpan,
   );

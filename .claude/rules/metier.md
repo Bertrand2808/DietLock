@@ -74,7 +74,7 @@ The home screen shows, beside the weight trend, the mean Energy of the 7 calenda
 
 ## Macro mean
 
-The « Graphiques » screen shows, under the weight curve, the mean protein per day of the 7 or 15 calendar days ending yesterday (M12), and how it differs from the period before that. A bar chart of the same days follows (M7 to M11). It is computed on demand and never stored. It reuses the windows and the rounding of the Energy mean (E1, E2, E3, E5).
+The « Graphiques » screen shows, under the weight curve, for each macro (M14), the mean per day of the 7 or 15 calendar days ending yesterday (M12), and how it differs from the period before that. A bar chart of the same days follows (M7 to M11). It is computed on demand and never stored. It reuses the windows and the rounding of the Energy mean (E1, E2, E3, E5).
 
 - **M1 · Window.** The mean covers J−7 to J−1, where J is today. Today is outside the window. The previous week is J−14 to J−8 (E1).
 - **M2 · Counted days.** A day with an Intake counts, including an Intake whose protein is 0 g. A day without an Intake does not, and is never read as 0 g (E2).
@@ -88,6 +88,7 @@ The « Graphiques » screen shows, under the weight curve, the mean protein per 
 - **M10 · Readable value.** The value of a day is readable in grams, at hover and, up to 7 days, on the chart (M13), with at most one decimal and a decimal comma (S6).
 - **M11 · Empty period.** With no Intake in the window the chart is replaced by a sentence. It is never a chart at zero.
 - **M12 · Period.** The macros have their own selector, 7 days or 15 days, on 7 days by default. For N days, the window is J−N to J−1 and the previous period is J−2N to J−N−1. Every rule M1 to M11 applies to the selected period. The choice is not kept after a restart. The weight selector (15 or 30 days) is independent: changing one never changes the other.
+- **M14 · Three macros.** The screen shows three blocks under the weight curve, in this order: Protéines, Glucides, Lipides. Each block has its own summary (M1 to M6, M13) and its own chart (M7 to M11), computed from its own macro only. The period selector (M12) applies to the three blocks at once. The blocks are stacked and the screen scrolls; the three charts are not required to fit on one screen. The mean stays in whole grams although a macro is entered with one decimal (S6, M5). Calories, water and targets are not shown here.
 - **M13 · Period wording.** The gap names the previous period: « vs semaine d'avant » for 7 days, « vs 15 jours d'avant » for 15 days. The chart has one bar per day of the period. Beyond 7 days the axis shows the day number only and the bars carry no value label; the value stays in the tooltip (M10).
 
 ## Alert
