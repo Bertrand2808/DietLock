@@ -3,9 +3,10 @@
 
 use dietlock_core::{
     ACTIVITY_NOTE_MAX_CHARS, ActivityDraft, Day, DuplicateDate, DuplicateIntakeDate,
-    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroDay, MacroWeek, ProposedIntake,
-    TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert,
-    display_tenth_kg, energy_kcal, energy_week, protein_days, protein_week, trend, variation,
+    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroDay, MacroMean, MacroPeriod,
+    ProposedIntake, TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN,
+    WeighIn, alert, display_tenth_kg, energy_kcal, energy_week, protein_days, protein_mean, trend,
+    variation,
 };
 use dietlock_store::StoreError;
 use serde::{Deserialize, Serialize};
@@ -24,9 +25,11 @@ pub fn history_start(today: Day) -> Day {
     today.minus_days(HISTORY_DAYS - 1).unwrap_or(today)
 }
 
-/// First day the macro summary reads: the start of the previous week, J−14.
+/// First day the macro summary reads: the start of the previous 15-day period, J−30.
 pub fn macro_summary_start(today: Day) -> Day {
-    today.minus_days(ENERGY_WEEK_DAYS * 2).unwrap_or(today)
+    today
+        .minus_days(MacroPeriod::FifteenDays.days() * 2)
+        .unwrap_or(today)
 }
 
 /// Tenths of a kg written with a decimal comma, e.g. `82,6`.
@@ -259,7 +262,7 @@ impl From<Option<EnergyWeek>> for EnergyWeekView {
     }
 }
 
-/// One macro over the week ending yesterday, as the screen receives it.
+/// One macro over the period ending yesterday, as the screen receives it.
 /// `Absent` is not a mean of 0 g. A `gap_g` of `None` is not a gap of 0.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
@@ -273,14 +276,14 @@ pub enum MacroMeanView {
     },
 }
 
-impl From<Option<MacroWeek>> for MacroMeanView {
-    fn from(week: Option<MacroWeek>) -> Self {
-        match week {
+impl From<Option<MacroMean>> for MacroMeanView {
+    fn from(mean: Option<MacroMean>) -> Self {
+        match mean {
             None => Self::Absent,
-            Some(week) => Self::Present {
-                mean_g: week.mean_g(),
-                days: week.days(),
-                gap_g: week.gap_g(),
+            Some(mean) => Self::Present {
+                mean_g: mean.mean_g(),
+                days: mean.days(),
+                gap_g: mean.gap_g(),
             },
         }
     }
@@ -317,24 +320,46 @@ impl From<MacroDay> for MacroDayView {
     }
 }
 
-/// Macro summaries of the « Graphiques » screen. M1–M10.
+/// The macros over one period ending yesterday. M1–M12.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroPeriodView {
+    pub protein: MacroMeanView,
+    /// One row per day of the period, oldest first.
+    pub protein_days: Vec<MacroDayView>,
+}
+
+impl MacroPeriodView {
+    fn new(
+        today: Day,
+        intakes: &[Intake],
+        period: MacroPeriod,
+    ) -> Result<Self, DuplicateIntakeDate> {
+        Ok(Self {
+            protein: MacroMeanView::from(protein_mean(intakes, today, period)?),
+            protein_days: protein_days(intakes, today, period)?
+                .into_iter()
+                .map(MacroDayView::from)
+                .collect(),
+        })
+    }
+}
+
+/// Macro summaries of the « Graphiques » screen, for both periods, so the
+/// selector switches without another call. M12.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MacroSummary {
-    pub protein: MacroMeanView,
-    /// The 7 days ending yesterday, oldest first.
-    pub protein_days: Vec<MacroDayView>,
+    pub seven_days: MacroPeriodView,
+    pub fifteen_days: MacroPeriodView,
 }
 
 impl MacroSummary {
     /// `Err` when two intakes share a date (S2).
     pub fn new(today: Day, intakes: &[Intake]) -> Result<Self, DuplicateIntakeDate> {
         Ok(Self {
-            protein: MacroMeanView::from(protein_week(intakes, today)?),
-            protein_days: protein_days(intakes, today)?
-                .into_iter()
-                .map(MacroDayView::from)
-                .collect(),
+            seven_days: MacroPeriodView::new(today, intakes, MacroPeriod::SevenDays)?,
+            fifteen_days: MacroPeriodView::new(today, intakes, MacroPeriod::FifteenDays)?,
         })
     }
 }
