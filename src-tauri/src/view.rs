@@ -320,7 +320,7 @@ impl From<MacroDay> for MacroDayView {
     }
 }
 
-/// One macro over one period: its mean and gap, and its daily rows. M1–M12.
+/// One macro over one period: its mean and gap, and its daily rows. M1–M14.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MacroBlockView {

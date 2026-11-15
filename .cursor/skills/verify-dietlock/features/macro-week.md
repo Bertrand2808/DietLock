@@ -4,10 +4,7 @@ The `Graphiques` screen shows, under the weight curve, a `Macros` header (`#macr
 
 ## Sub-features
 
-The ids below are the protein block's. The carbs block uses `#macro-carbs-…` and the fat block `#macro-fat-…`, with the same suffixes (`figure`, `note`, `pill`, `chart`, `span`).
-
-- `macro-three-blocks` shows `#macro-protein`, `#macro-carbs` and `#macro-fat` stacked in that order, under `#macro-seg`. Clicking `15 j` redraws all three. With an intake of 150 / 200 / 60 g on yesterday, the figures read `150 g/j`, `200 g/j` and `60 g/j`, with no mix between the blocks. The screen scrolls to reach the last block.
-
+- `macro-three-blocks` shows `#macro-protein`, `#macro-carbs` and `#macro-fat` stacked in that order, under `#macro-seg`. Clicking `15 j` redraws all three. With an intake of 150 / 200 / 60 g on yesterday, the figures read `150 g/j`, `200 g/j` and `60 g/j`, with no mix between the blocks. The screen scrolls to reach the last block. The other bullets name the protein block's ids; the carbs block uses `#macro-carbs-…` and the fat block `#macro-fat-…`, with the same suffixes (`figure`, `note`, `pill`, `chart`, `span`).
 - `macro-period` is the selector `#macro-seg` with two buttons, `[data-macro-span="7"]` (`7 j`, pressed on launch) and `[data-macro-span="15"]` (`15 j`). Clicking `15 j` presses it, sets `#macro-protein-span` to `15 derniers jours, hier compris`, and redraws the block for 15 days. It never changes the weight selector `#span-seg`, and `#span-seg` never changes it.
 - `macro-mean` shows `#macro-protein-figure` as `N g/j` and `#macro-protein-note` ending with `N jours saisis`. When a pill is shown, it comes first in the note.
 - `macro-gap` shows `#macro-protein-pill` such as `+12 vs semaine d'avant` (7 j) or `+12 vs 15 jours d'avant` (15 j) when the previous period has intakes. Class `up` when positive, `down` when negative, `even` when 0.
@@ -29,6 +26,7 @@ Preconditions:
 - `dietlock-verify doctor` printed `doctor PASS`.
 - Read today from `#weigh-chip`'s `data-date`. The period is the 7 or 15 days ending yesterday, and the previous period is the same number of days before it.
 
+- **Read the other blocks.** Every read below applies to carbs and fat with their own ids. Scroll `#macro-fat` into view before the screenshot: `eval 'document.getElementById("macro-fat").scrollIntoView(); "scrolled"'`.
 - **Read an empty period.** Open `Graphiques` with `eval 'document.getElementById("tab-weight").click()'`. `#macro-protein-figure` is `—` and `#macro-protein-note` is empty.
 - **Enter days.** Enter intakes the way `energy-week.md` does, with known protein.
 - **Read the mean.** `#macro-protein-figure` is the mean in whole grams plus ` g/j`. `#macro-protein-note` ends with `N jours saisis` or `1 jour saisi`.

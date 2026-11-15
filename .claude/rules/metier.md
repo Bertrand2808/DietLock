@@ -77,19 +77,19 @@ The home screen shows, beside the weight trend, the mean Energy of the 7 calenda
 The « Graphiques » screen shows, under the weight curve, for each macro (M14), the mean per day of the 7 or 15 calendar days ending yesterday (M12), and how it differs from the period before that. A bar chart of the same days follows (M7 to M11). It is computed on demand and never stored. It reuses the windows and the rounding of the Energy mean (E1, E2, E3, E5).
 
 - **M1 · Window.** The mean covers J−7 to J−1, where J is today. Today is outside the window. The previous week is J−14 to J−8 (E1).
-- **M2 · Counted days.** A day with an Intake counts, including an Intake whose protein is 0 g. A day without an Intake does not, and is never read as 0 g (E2).
+- **M2 · Counted days.** A day with an Intake counts, including an Intake whose macro is 0 g. A day without an Intake does not, and is never read as 0 g (E2).
 - **M3 · No mean.** If the window holds no Intake, there is no mean and the screen shows « — ». That absence is not 0 (E3).
 - **M4 · Gap.** The gap is this week's displayed mean minus the previous week's displayed mean, in whole grams, with a sign. If the previous week holds no Intake, there is no gap. A real tie is a gap of 0, shown as « 0 » (E4).
-- **M5 · Rounding.** The mean is the sum of the proteins in tenths of a gram divided by 10 × N, rounded half away from zero to a whole gram. The gap subtracts the two displayed means (E5).
+- **M5 · Rounding.** The mean is the sum of the macro in tenths of a gram divided by 10 × N, rounded half away from zero to a whole gram. The gap subtracts the two displayed means (E5).
 - **M6 · Refresh.** Adding, replacing or deleting an Intake updates the mean and the gap when the screen is next shown (E6).
-- **M7 · Daily bars.** Under the summary, a bar chart shows one bar per day of the window, oldest on the left, each labelled with its weekday and day number (`lun. 9`; the day number only beyond 7 days, M13). Bars are proportional to the protein of the day, from a common baseline. Today is not shown.
+- **M7 · Daily bars.** Under the summary, a bar chart shows one bar per day of the window, oldest on the left, each labelled with its weekday and day number (`lun. 9`; the day number only beyond 7 days, M13). Bars are proportional to the macro of the day, from a common baseline. Today is not shown.
 - **M8 · Hole and zero.** A day without an Intake is a hole: no bar, never a bar at 0. A day entered at 0 g is drawn as a short stub with its value, so it stays distinct from a hole.
 - **M9 · Mean line.** A horizontal line marks the displayed mean of the summary (M5), at the height of that value on the same scale as the bars. With no Intake in the window there is no line.
 - **M10 · Readable value.** The value of a day is readable in grams, at hover and, up to 7 days, on the chart (M13), with at most one decimal and a decimal comma (S6).
 - **M11 · Empty period.** With no Intake in the window the chart is replaced by a sentence. It is never a chart at zero.
 - **M12 · Period.** The macros have their own selector, 7 days or 15 days, on 7 days by default. For N days, the window is J−N to J−1 and the previous period is J−2N to J−N−1. Every rule M1 to M11 applies to the selected period. The choice is not kept after a restart. The weight selector (15 or 30 days) is independent: changing one never changes the other.
-- **M14 · Three macros.** The screen shows three blocks under the weight curve, in this order: Protéines, Glucides, Lipides. Each block has its own summary (M1 to M6, M13) and its own chart (M7 to M11), computed from its own macro only. The period selector (M12) applies to the three blocks at once. The blocks are stacked and the screen scrolls; the three charts are not required to fit on one screen. The mean stays in whole grams although a macro is entered with one decimal (S6, M5). Calories, water and targets are not shown here.
 - **M13 · Period wording.** The gap names the previous period: « vs semaine d'avant » for 7 days, « vs 15 jours d'avant » for 15 days. The chart has one bar per day of the period. Beyond 7 days the axis shows the day number only and the bars carry no value label; the value stays in the tooltip (M10).
+- **M14 · Three macros.** The screen shows three blocks under the weight curve, in this order: Protéines, Glucides, Lipides. Each block has its own summary (M1 to M6, M13) and its own chart (M7 to M11), computed from its own macro only. The period selector (M12) applies to the three blocks at once. The blocks are stacked and the screen scrolls.
 
 ## Alert
 
