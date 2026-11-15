@@ -8,6 +8,11 @@ The `Graphiques` screen shows, under the weight curve, a `Protéines` block: the
 - `macro-gap` shows `#macro-protein-pill` such as `+12 vs semaine d'avant` when the previous week has intakes. Class `up` when positive, `down` when negative, `even` when 0.
 - `macro-no-comparison` shows no pill when the previous week is empty.
 - `macro-none` shows `—` when the window has no intake. The figure has no digit.
+- `macro-bars` shows `#macro-protein-chart` with one `rect.mc-bar` per day entered, oldest on the left, and one `text.mc-x` label per day of the window (`lun. 9`).
+- `macro-hole` leaves no bar for a day without intake. A day entered at 0 g has a bar of height 2 and the value `0 g`.
+- `macro-mean-line` draws one `line.mc-mean` at the displayed mean. It is absent when the window has no intake.
+- `macro-hover` gives each bar a `title` such as `lun. 9 · 142,5 g`.
+- `macro-chart-empty` replaces the chart by `Aucune saisie sur ces 7 jours.` (a `p.empty`, no `svg`) when the window has no intake.
 - `macro-today-excluded` ignores today's intake.
 - `macro-refresh` updates the block after an add, a replacement or a deletion, once `Graphiques` is shown again.
 - `macro-reopen` shows the same figures after the app is closed and opened again on the same data.
