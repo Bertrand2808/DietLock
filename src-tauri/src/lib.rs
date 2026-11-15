@@ -28,6 +28,7 @@ pub fn run() {
             commands::proposed_intake_date,
             commands::list_days,
             commands::weight_curve,
+            commands::macro_summary,
             commands::delete_entry,
             commands::save_activities
         ])

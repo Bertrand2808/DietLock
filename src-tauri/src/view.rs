@@ -3,9 +3,9 @@
 
 use dietlock_core::{
     ACTIVITY_NOTE_MAX_CHARS, ActivityDraft, Day, DuplicateDate, DuplicateIntakeDate,
-    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, ProposedIntake, TREND_WINDOW_DAYS,
-    ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert, display_tenth_kg,
-    energy_kcal, energy_week, trend, variation,
+    ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroWeek, ProposedIntake,
+    TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN, WeighIn, alert,
+    display_tenth_kg, energy_kcal, energy_week, protein_week, trend, variation,
 };
 use dietlock_store::StoreError;
 use serde::{Deserialize, Serialize};
@@ -251,6 +251,49 @@ impl From<Option<EnergyWeek>> for EnergyWeekView {
                 gap_kcal: week.gap_kcal(),
             },
         }
+    }
+}
+
+/// One macro over the week ending yesterday, as the screen receives it.
+/// `Absent` is not a mean of 0 g. A `gap_g` of `None` is not a gap of 0.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum MacroWeekView {
+    Absent,
+    #[serde(rename_all = "camelCase")]
+    Present {
+        mean_g: u32,
+        days: u32,
+        gap_g: Option<i32>,
+    },
+}
+
+impl From<Option<MacroWeek>> for MacroWeekView {
+    fn from(week: Option<MacroWeek>) -> Self {
+        match week {
+            None => Self::Absent,
+            Some(week) => Self::Present {
+                mean_g: week.mean_g(),
+                days: week.days(),
+                gap_g: week.gap_g(),
+            },
+        }
+    }
+}
+
+/// Macro summaries of the « Graphiques » screen. M1–M4.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroSummary {
+    pub protein: MacroWeekView,
+}
+
+impl MacroSummary {
+    /// `Err` when two intakes share a date (S2).
+    pub fn new(today: Day, intakes: &[Intake]) -> Result<Self, DuplicateIntakeDate> {
+        Ok(Self {
+            protein: MacroWeekView::from(protein_week(intakes, today)?),
+        })
     }
 }
 

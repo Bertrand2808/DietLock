@@ -5,9 +5,9 @@ use std::sync::Mutex;
 
 use chrono::Timelike;
 use dietlock_core::{
-    ActivityDraft, Day, Intake, IntakePresence, SaveDecision, SwitchHour, TREND_WINDOW_DAYS,
-    WeighIn, build_activities, check_not_future, decide_intake, decide_water, decide_weigh_in,
-    parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
+    ActivityDraft, Day, ENERGY_WEEK_DAYS, Intake, IntakePresence, SaveDecision, SwitchHour,
+    TREND_WINDOW_DAYS, WeighIn, build_activities, check_not_future, decide_intake, decide_water,
+    decide_weigh_in, parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
     proposed_intake_date as core_proposed_intake_date, proposed_weigh_in_date, trend,
 };
 use dietlock_store::{SaveError, Store};
@@ -15,7 +15,7 @@ use tauri::State;
 
 use crate::view::{
     self, ActivityDraftInput, ActivitySaved, DeleteBlock, DeleteOutcome, DeleteTarget,
-    IntakeSaveOutcome, IntakeView, Listing, SaveOutcome, WeighInView, WeightScreen,
+    IntakeSaveOutcome, IntakeView, Listing, MacroSummary, SaveOutcome, WeighInView, WeightScreen,
 };
 
 /// Current local day, read from the system clock.
@@ -266,6 +266,19 @@ pub fn weight_curve(store: State<'_, Mutex<Store>>) -> Result<WeightScreen, Stri
         .list_weigh_ins(from, today)
         .map_err(|e| view::store_message(&e))?;
     WeightScreen::new(today, &weigh_ins).map_err(|_| view::duplicate_date_message().to_owned())
+}
+
+/// Macro summaries of the « Graphiques » screen, computed from the stored
+/// intakes on every read. Both weeks end yesterday, so they start at J−14.
+#[tauri::command]
+pub fn macro_summary(store: State<'_, Mutex<Store>>) -> Result<MacroSummary, String> {
+    let today = today()?;
+    let from = today.minus_days(ENERGY_WEEK_DAYS * 2).unwrap_or(today);
+    let store = lock(&store)?;
+    let intakes = store
+        .list_intakes(from, today)
+        .map_err(|e| view::store_message(&e))?;
+    MacroSummary::new(today, &intakes).map_err(|_| view::duplicate_intake_message().to_owned())
 }
 
 /// Deletes one block of a day after confirmation (S10). Without `confirm`,
