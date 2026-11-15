@@ -14,7 +14,7 @@ function gapTone(grams) {
  * `kind: "absent"` is no intake in that week: a dash, never a 0.
  * A present mean of 0 g is a real zero. `gapG == null` is no pill and no gap.
  */
-export function macroCopy(week) {
+export function macroCopy(week, periodDays = 7) {
   if (!week || week.kind !== "present") {
     return { kind: "absent", meanText: "—", note: "", pill: null };
   }
@@ -22,6 +22,14 @@ export function macroCopy(week) {
   const pill =
     week.gapG == null
       ? null
-      : { text: `${signedGrams(week.gapG)} vs semaine d'avant`, tone: gapTone(week.gapG) };
+      : { text: `${signedGrams(week.gapG)} vs ${previousPeriodName(periodDays)}`, tone: gapTone(week.gapG) };
   return { kind: "present", meanText: `${week.meanG} g/j`, note, pill };
+}
+
+function previousPeriodName(periodDays) {
+  return periodDays === 7 ? "semaine d'avant" : `${periodDays} jours d'avant`;
+}
+
+export function macroPeriodCaption(periodDays) {
+  return `${periodDays} derniers jours, hier compris`;
 }
