@@ -160,7 +160,7 @@ test("M12: fifteen days give fifteen slots and a bar only for the entered days",
   assert.ok(geometry.mean, "the mean line is kept");
 });
 
-test("M12: at fifteen days the axis shows the day number and no value label", () => {
+test("M13: at fifteen days the axis shows the day number and no value label", () => {
   const box = host();
   withDocument(() => renderMacroChart(box, fifteenDays([1200, 1500]), 135, 15));
   const root = box.children[0];
@@ -171,7 +171,7 @@ test("M12: at fifteen days the axis shows the day number and no value label", ()
   assert.equal(withClass(root, "mc-bar").length, 2);
 });
 
-test("M12: at seven days the value labels and the weekday labels stay", () => {
+test("M13: at seven days the value labels and the weekday labels stay", () => {
   const box = host();
   withDocument(() => renderMacroChart(box, week([1200, 1500]), 135, 7));
   const root = box.children[0];

@@ -10,20 +10,21 @@ function gapTone(grams) {
 }
 
 /**
- * French copy for one macro over the week ending yesterday.
- * `kind: "absent"` is no intake in that week: a dash, never a 0.
+ * French copy for one macro over the period ending yesterday.
+ * `periodDays` is the length of that period, 7 or 15: it names the previous period in the pill.
+ * `kind: "absent"` is no intake in that period: a dash, never a 0.
  * A present mean of 0 g is a real zero. `gapG == null` is no pill and no gap.
  */
-export function macroCopy(week, periodDays = 7) {
-  if (!week || week.kind !== "present") {
+export function macroCopy(mean, periodDays = 7) {
+  if (!mean || mean.kind !== "present") {
     return { kind: "absent", meanText: "—", note: "", pill: null };
   }
-  const note = week.days === 1 ? "1 jour saisi" : `${week.days} jours saisis`;
+  const note = mean.days === 1 ? "1 jour saisi" : `${mean.days} jours saisis`;
   const pill =
-    week.gapG == null
+    mean.gapG == null
       ? null
-      : { text: `${signedGrams(week.gapG)} vs ${previousPeriodName(periodDays)}`, tone: gapTone(week.gapG) };
-  return { kind: "present", meanText: `${week.meanG} g/j`, note, pill };
+      : { text: `${signedGrams(mean.gapG)} vs ${previousPeriodName(periodDays)}`, tone: gapTone(mean.gapG) };
+  return { kind: "present", meanText: `${mean.meanG} g/j`, note, pill };
 }
 
 function previousPeriodName(periodDays) {

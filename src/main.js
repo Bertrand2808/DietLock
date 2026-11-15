@@ -429,8 +429,8 @@ function renderMacros() {
   renderMacroBlock("protein", period?.protein, period?.proteinDays ?? []);
 }
 
-function renderMacroBlock(name, week, chartDays) {
-  const copy = macroCopy(week, macroSpan);
+function renderMacroBlock(name, mean, chartDays) {
+  const copy = macroCopy(mean, macroSpan);
   const figure = $(`macro-${name}-figure`);
   const note = $(`macro-${name}-note`);
   figure.replaceChildren();
@@ -449,7 +449,7 @@ function renderMacroBlock(name, week, chartDays) {
   renderMacroChart(
     $(`macro-${name}-chart`),
     chartDays,
-    week?.kind === "present" ? week.meanG : null,
+    mean?.kind === "present" ? mean.meanG : null,
     macroSpan,
   );
 }

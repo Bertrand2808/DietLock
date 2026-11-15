@@ -52,7 +52,7 @@ test("M13: the gap wording follows the period, not always the week", () => {
   assert.equal(macroCopy(tie, 15).pill.text, "0 vs 15 jours d'avant");
 });
 
-test("M12: the caption names the period", () => {
+test("M13: the caption names the period", () => {
   assert.equal(macroPeriodCaption(7), "7 derniers jours, hier compris");
   assert.equal(macroPeriodCaption(15), "15 derniers jours, hier compris");
 });

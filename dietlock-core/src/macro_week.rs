@@ -1,7 +1,7 @@
 //! Mean protein of the period ending yesterday, and the gap with the period before.
 //!
-//! Same window and same absence rules as the energy mean (E1–E5), applied to
-//! the protein of each intake. Computed on demand and never stored.
+//! The absence and rounding rules of the energy mean (E1–E5), applied to the
+//! protein of each intake, over the period of M12. Computed on demand and never stored.
 
 use std::collections::HashSet;
 
