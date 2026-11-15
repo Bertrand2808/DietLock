@@ -1,16 +1,16 @@
 # Weight curve
 
-`Poids` shows the smoothed weight and the daily weigh-ins. With no weigh-in, the screen says the curve is not there yet and counts `aucune pesée` over the last 15 days.
+`Graphiques` shows the smoothed weight and the daily weigh-ins. With no weigh-in, the screen says the curve is not there yet and counts `aucune pesée` over the last 15 days.
 
 ## Sub-features
 
-- `weight-open` opens `Poids` from the title-bar tab. `Aujourd'hui` stays in the window, hidden.
+- `weight-open` opens `Graphiques` from the title-bar tab. `Aujourd'hui` stays in the window, hidden.
 - `weight-empty` shows `Pas encore de courbe.` and the chart sentence `Ta courbe se dessinera ici.`
 - `weight-span` switches the window between `15 j` and `30 j` without leaving the screen.
 
 ## How to get to it (user POV)
 
-- Choose the `Poids` tab.
+- Choose the `Graphiques` tab.
 - Press `Ctrl+2` on Linux (`⌘2` on macOS) while focus is outside a field. `Ctrl+1` returns to `Aujourd'hui`.
 
 ## Driving it with dietlock-verify

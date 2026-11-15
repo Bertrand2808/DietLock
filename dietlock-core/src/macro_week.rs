@@ -28,7 +28,7 @@ fn protein_mean_ending(intakes: &[Intake], end: Day) -> Option<(u32, u32)> {
     Some((u32::try_from(mean_g).ok()?, u32::try_from(days).ok()?))
 }
 
-/// Mean of one macro over the intakes of a window, in whole grams. M1–M4.
+/// Mean of one macro over the intakes of a window, in whole grams. M1–M5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MacroWeek {
     mean_g: u32,
@@ -182,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn e5_half_gram_rounds_away_from_zero() {
+    fn m5_half_gram_rounds_away_from_zero() {
         // 100,0 g and 101,0 g: mean 100,5 g, displayed 101.
         let intakes = [
             protein_tenths("2026-11-07", 1000),
@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn e5_a_tenth_of_a_gram_below_the_half_rounds_down() {
+    fn m5_a_tenth_of_a_gram_below_the_half_rounds_down() {
         // 100,0 g and 100,9 g: mean 100,45 g, displayed 100.
         let intakes = [
             protein_tenths("2026-11-07", 1000),
@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn e5_gap_subtracts_the_displayed_means() {
+    fn m5_gap_subtracts_the_displayed_means() {
         // This week 100,5 → 101. Previous week 101,0 → 101. Displayed gap 0, raw gap −0,5.
         let intakes = [
             protein_tenths("2026-11-07", 1000),

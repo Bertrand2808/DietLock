@@ -12,7 +12,7 @@ Activities are the physical activities of one day, entered together in a modal f
 
 ## How to get to it (user POV)
 
-- Click `＋ Activité` (`#act-open`) in the title bar, on `Aujourd'hui` or on `Poids`.
+- Click `＋ Activité` (`#act-open`) in the title bar, on `Aujourd'hui` or on `Graphiques`.
 - Date: the chip `#act-chip` (`data-date`) opens the same calendar as the entry card.
 
 ## Driving it with dietlock-verify

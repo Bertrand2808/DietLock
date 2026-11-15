@@ -2,7 +2,7 @@
 
 This directory is the maintained source for verifying the user-facing behavior of DietLock. Read the index before driving the app, then use the matching feature file as the recipe.
 
-The window has two screens, `Aujourd'hui` and `Poids`. Nothing leaves the window.
+The window has two screens, `Aujourd'hui` and `Graphiques`. Nothing leaves the window.
 
 ## Baseline preconditions
 
@@ -20,13 +20,13 @@ The window has two screens, `Aujourd'hui` and `Poids`. Nothing leaves the window
 - Treat every command as literal. Keep quoted strings and flags unchanged.
 - Run actions through `dietlock-verify eval`. Read the screen with `dietlock-verify text`.
 - Read stored rows with `dietlock-verify db` after a save or a cancelled replacement.
-- Poll `text` after `#save` or after opening `Poids`. Both finish after the expression returns.
+- Poll `text` after `#save` or after opening `Graphiques`. Both finish after the expression returns.
 - Every pull request includes its proof in the PR body: the screenshot and check output, or the test output.
 
 ## Proof and skip reporting
 
 - Capture the user action and the resulting state, not only the final screen.
-- UI proof for the landing journey is `check-today`: a screenshot of `Aujourd'hui` plus the DOM checks, including the `Poids` screen opened afterwards. The PNG stays on `Aujourd'hui`.
+- UI proof for the landing journey is `check-today`: a screenshot of `Aujourd'hui` plus the DOM checks, including the `Graphiques` screen opened afterwards. The PNG stays on `Aujourd'hui`.
 - Command-line proof is `cargo-test.txt` or `frontend-test.txt`: the command, stdout, stderr, and the exit code.
 - Mutation proof includes `dietlock-verify db` as well as the history row.
 - Record the feature id and the entry point with the artifact.
@@ -47,9 +47,10 @@ Keep implementation details out of the map. Name only user paths, stable handles
 ## Features
 
 - [Today's screen](./today.md) covers `Aujourd'hui` on an empty store: the two empty columns, chips, empty history, and the screenshot check.
-- [Weight curve](./weight.md) covers the `Poids` screen, the 15-day empty state, and the 30-day switch.
+- [Weight curve](./weight.md) covers the `Graphiques` screen, the 15-day empty state, and the 30-day switch.
 - [Weigh-in](./weigh-in.md) covers saving today's fasted weight from the entry card.
 - [Intake](./intake.md) covers saving macros and optional water from the same card.
 - [Replace a day](./replace.md) covers the confirmation when that date already has a weigh-in or an intake.
 - [Activities](./activity.md) covers the `＋ Activité` button, the modal form, saving several rows for a date, cancelling, and a restart.
+- [Macro week](./macro-week.md) covers the protein block under the weight curve on `Graphiques`: the 7-day mean, the signed gap, the empty cases, and a restart.
 - [Energy week](./energy-week.md) covers the 7-day kcal mean beside the weight trend, the signed gap, the empty cases, and a restart.
