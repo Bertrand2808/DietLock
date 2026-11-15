@@ -29,7 +29,8 @@ export function macroBars(days, meanG) {
   const baseline = TOP + innerH;
   const slot = innerW / days.length;
   const meanTenth = meanG == null ? null : meanG * 10;
-  const top = Math.max(1, ...entered.map((day) => day.tenthG), meanTenth ?? 0);
+  // The 1 avoids dividing by zero when every day is 0 g.
+  const top = Math.max(1,...entered.map((day) => day.tenthG), meanTenth ?? 0);
   const slots = days.map((day, index) => ({ x: LEFT + slot * (index + 0.5), label: day.label }));
   const bars = [];
   days.forEach((day, index) => {

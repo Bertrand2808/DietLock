@@ -1,6 +1,6 @@
 # Macro week
 
-The `Graphiques` screen shows, under the weight curve, a `Protéines` block: the mean protein per day of the 7 days ending yesterday, how many of those days were entered, and a pill for the signed gap with the 7 days before. A day without macros is left out. A day entered at 0 g counts. No intake in the window is `—`, not 0. No intake in the previous week hides the pill. A gap of 0 is the pill `0 vs semaine d'avant`.
+The `Graphiques` screen shows, under the weight curve, a `Protéines` block with a bar chart of the 7 days (see `macro-bars` below) and: the mean protein per day of the 7 days ending yesterday, how many of those days were entered, and a pill for the signed gap with the 7 days before. A day without macros is left out. A day entered at 0 g counts. No intake in the window is `—`, not 0. No intake in the previous week hides the pill. A gap of 0 is the pill `0 vs semaine d'avant`.
 
 ## Sub-features
 
@@ -9,8 +9,8 @@ The `Graphiques` screen shows, under the weight curve, a `Protéines` block: the
 - `macro-no-comparison` shows no pill when the previous week is empty.
 - `macro-none` shows `—` when the window has no intake. The figure has no digit.
 - `macro-bars` shows `#macro-protein-chart` with one `rect.mc-bar` per day entered, oldest on the left, and one `text.mc-x` label per day of the window (`lun. 9`).
-- `macro-hole` leaves no bar for a day without intake. A day entered at 0 g has a bar of height 2 and the value `0 g`.
-- `macro-mean-line` draws one `line.mc-mean` at the displayed mean. It is absent when the window has no intake.
+- `macro-hole` leaves no bar for a day without intake. A day entered at 0 g has a `rect.mc-bar` of height 2 and a `text.mc-val` reading `0 g`.
+- `macro-mean-line` draws one `line.mc-mean` at the displayed mean, with the label `text.mc-mean-lbl` (`moyenne N g`). Both are absent when the window has no intake.
 - `macro-hover` gives each bar a `title` such as `lun. 9 · 142,5 g`.
 - `macro-chart-empty` replaces the chart by `Aucune saisie sur ces 7 jours.` (a `p.empty`, no `svg`) when the window has no intake.
 - `macro-today-excluded` ignores today's intake.

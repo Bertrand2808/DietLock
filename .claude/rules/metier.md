@@ -74,7 +74,7 @@ The home screen shows, beside the weight trend, the mean Energy of the 7 calenda
 
 ## Macro mean
 
-The « Graphiques » screen shows, under the weight curve, the mean protein per day of the 7 calendar days ending yesterday, and how it differs from the 7 days before that. It is computed on demand and never stored. It reuses the windows and the rounding of the Energy mean (E1, E2, E3, E5).
+The « Graphiques » screen shows, under the weight curve, the mean protein per day of the 7 calendar days ending yesterday, and how it differs from the 7 days before that. A bar chart of the same days follows (M7 to M11). It is computed on demand and never stored. It reuses the windows and the rounding of the Energy mean (E1, E2, E3, E5).
 
 - **M1 · Window.** The mean covers J−7 to J−1, where J is today. Today is outside the window. The previous week is J−14 to J−8 (E1).
 - **M2 · Counted days.** A day with an Intake counts, including an Intake whose protein is 0 g. A day without an Intake does not, and is never read as 0 g (E2).

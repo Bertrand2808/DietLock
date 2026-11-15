@@ -63,7 +63,7 @@ function withClass(root, className) {
   return all(root).filter((node) => (node.attrs?.class ?? "").split(/\s+/).includes(className));
 }
 
-test("M9: no intake in the period is an empty state, not bars at zero", () => {
+test("M11: no intake in the period is an empty state, not bars at zero", () => {
   const geometry = macroBars(week([]), null);
   assert.equal(geometry.empty, true);
   assert.deepEqual(geometry.bars, []);

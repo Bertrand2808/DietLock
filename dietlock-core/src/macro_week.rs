@@ -201,7 +201,7 @@ mod tests {
     }
 
     #[test]
-    fn m7_a_day_keeps_its_tenths_of_a_gram() {
+    fn m10_a_day_keeps_its_tenths_of_a_gram() {
         let found = days_of(&[protein_tenths("2026-11-08", 1425)]);
         assert_eq!(found[6].1, Some(1425));
     }
