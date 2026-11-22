@@ -898,19 +898,19 @@ kbd {
   border-top: 1px solid var(--line);
 }
 
-.act-type {
+.hist-kind {
   flex: none;
   width: 76px;
   font-weight: 600;
 }
 
-.act-note {
+.hist-note {
   flex: 1;
   min-width: 0;
   color: var(--mut);
 }
 
-.act-note.none {
+.hist-note.none {
   font-style: italic;
 }
 

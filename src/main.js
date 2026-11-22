@@ -316,15 +316,15 @@ function activityList(activities) {
     const row = document.createElement("div");
     row.className = "act-item";
     const type = document.createElement("span");
-    type.className = "act-type";
+    type.className = "hist-kind";
     type.textContent = activityTooltipLines([activity])[0].label;
     const note = document.createElement("span");
     const text = activity.note ? activity.note : "";
     if (text) {
-      note.className = "act-note";
+      note.className = "hist-note";
       note.textContent = text;
     } else {
-      note.className = "act-note none";
+      note.className = "hist-note none";
       note.textContent = ACTIVITY_NO_NOTE;
     }
     const remove = document.createElement("button");
