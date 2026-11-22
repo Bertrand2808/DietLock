@@ -74,3 +74,47 @@ export function formKeyAction(event, pickerOpen) {
   if (savesOnEnter(event)) return "save";
   return null;
 }
+
+/** French label of a stored activity type. Unknown keys stay as stored. */
+export function activityTypeLabel(kind) {
+  return ACTIVITY_TYPES.find((type) => type.key === kind)?.label ?? kind;
+}
+
+/** AC7: the history badge. One activity is singular. */
+export function activityBadgeText(count) {
+  return count === 1 ? "1 activité" : `${count} activités`;
+}
+
+/**
+ * AC8: one tooltip line per stored activity, in entry order.
+ * A blank note is no note, so the line has no "·".
+ */
+export function activityTooltipLines(activities) {
+  return activities.map((activity) => ({
+    label: activityTypeLabel(activity.kind),
+    note: activity.note ? activity.note : null,
+  }));
+}
+
+export const ACTIVITY_MANAGE_HINT = "Clic pour gérer";
+export const ACTIVITY_NO_NOTE = "sans note";
+
+/** Clicking the badge of `date` opens its list, or folds it when it is already open. */
+export function nextOpenActivityDate(openDate, date) {
+  return openDate === date ? null : date;
+}
+
+/** AC9: the open list folds when that day no longer has an activity. */
+export function keptOpenActivityDate(openDate, days) {
+  if (!openDate) return null;
+  const day = days.find((item) => item.date === openDate);
+  if (!day || !day.activities || day.activities.length === 0) return null;
+  return openDate;
+}
+
+/** History rows: a weigh-in, an intake line, or at least one activity. */
+export function daysShownInHistory(days) {
+  return days.filter(
+    (day) => day.weightLabel || day.detail || (day.activities && day.activities.length > 0),
+  );
+}

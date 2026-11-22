@@ -15,6 +15,7 @@ use std::path::Path;
 use dietlock_core::{Activity, Day, Intake, WeighIn};
 use rusqlite::Connection;
 
+pub use activity::StoredActivity;
 pub use error::{SaveError, StoreError};
 pub use schema::SCHEMA_VERSION;
 
@@ -99,9 +100,15 @@ impl Store {
         Ok(())
     }
 
-    /// Activities from `from` to `to` inclusive, by date then by order of entry.
-    pub fn list_activities(&self, from: Day, to: Day) -> Result<Vec<Activity>, StoreError> {
+    /// Stored activities from `from` to `to` inclusive, by date then by id.
+    pub fn list_activities(&self, from: Day, to: Day) -> Result<Vec<StoredActivity>, StoreError> {
         activity::list_activities(&self.conn, from, to)
+    }
+
+    /// Removes the stored activity with this id. An unknown id removes nothing
+    /// and does not migrate the schema.
+    pub fn delete_activity(&self, id: i64) -> Result<(), StoreError> {
+        activity::delete_activity(&self.conn, id)
     }
 }
 

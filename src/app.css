@@ -785,6 +785,151 @@ kbd {
   color: var(--mut);
 }
 
+.day .act-mark {
+  position: relative;
+  align-self: center;
+  flex: none;
+  width: 64px;
+  min-width: 64px;
+  max-width: 64px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.act-badge {
+  position: relative;
+  border: 1px solid transparent;
+  background: var(--soft);
+  color: var(--fg);
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.act-badge.on {
+  background: var(--card);
+  color: var(--acc);
+  border-color: var(--acc);
+}
+
+.act-badge:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.act-tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  background: var(--fg);
+  color: var(--bg);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+  text-align: left;
+}
+
+.act-tip::before {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  top: -4px;
+  right: 10px;
+  background: var(--fg);
+  transform: rotate(45deg);
+}
+
+.act-mark:hover .act-tip,
+.act-mark:focus-within .act-tip {
+  display: block;
+}
+
+.day.open .act-tip {
+  display: none;
+}
+
+.act-tip-line,
+.act-tip-hint {
+  display: block;
+}
+
+.act-tip b {
+  font-weight: 600;
+}
+
+.act-tip-note,
+.act-tip-hint {
+  opacity: 0.7;
+}
+
+.act-tip-hint {
+  font-size: 11px;
+}
+
+.day.open {
+  background: var(--soft);
+  border-radius: 6px;
+}
+
+.act-list {
+  margin-left: 126px;
+  margin-bottom: 4px;
+  padding: 4px 10px;
+  border-left: 2px solid var(--acc);
+}
+
+.act-item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.act-item + .act-item {
+  border-top: 1px solid var(--line);
+}
+
+.act-type {
+  flex: none;
+  width: 76px;
+  font-weight: 600;
+}
+
+.act-note {
+  flex: 1;
+  min-width: 0;
+  color: var(--mut);
+}
+
+.act-note.none {
+  font-style: italic;
+}
+
+.act-remove {
+  flex: none;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--bad);
+  border-radius: 7px;
+  padding: 2px 9px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.act-remove:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
 .empty {
   margin: 0;
   padding: 56px 12px;

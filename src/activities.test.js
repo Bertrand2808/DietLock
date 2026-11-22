@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ACTIVITY_MANAGE_HINT,
+  ACTIVITY_NO_NOTE,
   ACTIVITY_TYPES,
+  activityBadgeText,
+  activityTooltipLines,
+  activityTypeLabel,
   addRow,
+  daysShownInHistory,
   emptyRow,
   formKeyAction,
+  keptOpenActivityDate,
+  nextOpenActivityDate,
   removeRow,
   rowIsEmpty,
   saveButtonText,
@@ -104,4 +112,57 @@ test("AC4: only Cmd+Enter saves from the keyboard", () => {
   assert.equal(formKeyAction({ key: "Enter", metaKey: true }, false), "save");
   assert.equal(formKeyAction({ key: "Enter" }, false), null);
   assert.equal(formKeyAction({ key: "a" }, false), null);
+});
+
+test("AC7: the badge names one activity and several activities", () => {
+  assert.equal(activityBadgeText(1), "1 activité");
+  assert.equal(activityBadgeText(2), "2 activités");
+  assert.equal(activityBadgeText(12), "12 activités");
+});
+
+test("AC7: a day with only activities is listed and a day with nothing is not", () => {
+  const days = [
+    { date: "a", weightLabel: "80,0 kg", detail: null, activities: [] },
+    { date: "b", weightLabel: null, detail: null, activities: [{ id: 1, kind: "walk", note: null }] },
+    { date: "c", weightLabel: null, detail: "400 kcal", activities: [] },
+    { date: "d", weightLabel: null, detail: null, activities: [] },
+    { date: "e", weightLabel: null, detail: null },
+  ];
+  assert.deepEqual(
+    daysShownInHistory(days).map((day) => day.date),
+    ["a", "b", "c"],
+  );
+});
+
+test("AC8: the tooltip keeps entry order, the type label, and omits the dot without a note", () => {
+  assert.equal(activityTypeLabel("walk"), "Marche");
+  assert.equal(activityTypeLabel("strength"), "Muscu");
+  assert.deepEqual(
+    activityTooltipLines([
+      { kind: "walk", note: "chien" },
+      { kind: "strength", note: null },
+      { kind: "bike", note: "" },
+    ]),
+    [
+      { label: "Marche", note: "chien" },
+      { label: "Muscu", note: null },
+      { label: "Vélo", note: null },
+    ],
+  );
+  assert.equal(ACTIVITY_MANAGE_HINT, "Clic pour gérer");
+  assert.equal(ACTIVITY_NO_NOTE, "sans note");
+});
+
+test("AC9: one list is open at a time and the last deletion folds it", () => {
+  assert.equal(nextOpenActivityDate(null, "2026-11-09"), "2026-11-09");
+  assert.equal(nextOpenActivityDate("2026-11-08", "2026-11-09"), "2026-11-09");
+  assert.equal(nextOpenActivityDate("2026-11-09", "2026-11-09"), null);
+  const days = [
+    { date: "2026-11-09", activities: [{ id: 1 }] },
+    { date: "2026-11-08", activities: [] },
+  ];
+  assert.equal(keptOpenActivityDate("2026-11-09", days), "2026-11-09");
+  assert.equal(keptOpenActivityDate("2026-11-08", days), null);
+  assert.equal(keptOpenActivityDate(null, days), null);
+  assert.equal(keptOpenActivityDate("2026-11-07", days), null);
 });
