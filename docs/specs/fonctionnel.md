@@ -83,6 +83,11 @@ Updated: 2026-11-22
 - AC4 · A row with a note but no type refuses the whole save; a save with no typed row is refused; cancelling saves nothing.
 - AC5 · Saving Activities appends without confirmation, allows duplicates, and never touches the Weigh-in or Intake of that date.
 - AC6 · Activities default to today, accept any past date, refuse future dates, and survive a restart.
+- AC7 · Each day holding at least one Activity is marked in the history; a day without Activities has no mark.
+- AC8 · A marked day shows its Activities, each with its type and note.
+- AC9 · An Activity can be deleted without confirmation; deleting the last Activity of a day removes its mark.
+- AC10 · Adding or deleting an Activity never changes the Trend, the Energy mean or the Macro means.
+- AC11 · A deleted Activity stays deleted after a restart.
 
 ## Edge cases
 - A missing Intake is never a zero, in any mean or gap.
