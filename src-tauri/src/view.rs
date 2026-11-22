@@ -8,7 +8,7 @@ use dietlock_core::{
     WeighIn, alert, display_tenth_kg, energy_kcal, energy_week, macro_days, macro_mean, trend,
     variation,
 };
-use dietlock_store::StoreError;
+use dietlock_store::{StoreError, StoredActivity};
 use serde::{Deserialize, Serialize};
 
 /// Number of calendar days shown in the history (J−29 to J).
@@ -145,6 +145,25 @@ pub struct ActivitySaved {
     pub count: usize,
 }
 
+/// One stored activity on a history day. `kind` is the stored key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityView {
+    pub id: i64,
+    pub kind: String,
+    pub note: Option<String>,
+}
+
+impl From<&StoredActivity> for ActivityView {
+    fn from(stored: &StoredActivity) -> Self {
+        Self {
+            id: stored.id(),
+            kind: stored.activity().kind().key().to_owned(),
+            note: stored.activity().note().map(str::to_owned),
+        }
+    }
+}
+
 /// The block of a day that a deletion targets (S10). Macros and water go together.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -188,6 +207,8 @@ pub struct DayView {
     pub alert: bool,
     pub weigh_in: Option<WeighInView>,
     pub intake: Option<IntakeView>,
+    /// Stored activities of that day, in entry order. Empty when there are none.
+    pub activities: Vec<ActivityView>,
 }
 
 /// Result of `save_weigh_in` when nothing went wrong.
@@ -648,6 +669,7 @@ impl Listing {
                     date: d.to_string(),
                     weigh_in: weigh_view,
                     intake: intake_view,
+                    activities: Vec::new(),
                 }
             })
             .collect();
@@ -694,6 +716,19 @@ impl Listing {
             days,
             trend,
         })
+    }
+
+    /// Puts each stored activity on its history day, keeping the given order.
+    /// A day with none keeps an empty list. A date outside the window is skipped.
+    pub fn attach_activities(mut self, activities: &[StoredActivity]) -> Self {
+        for day in &mut self.days {
+            day.activities = activities
+                .iter()
+                .filter(|row| row.activity().date().to_string() == day.date)
+                .map(ActivityView::from)
+                .collect();
+        }
+        self
     }
 }
 
@@ -885,6 +920,83 @@ mod tests {
         assert_eq!(d12.intake.as_ref().unwrap().energy_kcal, 2230);
         assert!(d11.weigh_in.is_some() && d11.intake.is_none());
         assert!(l.days[3].weigh_in.is_none() && l.days[3].intake.is_none());
+        assert!(l.days.iter().all(|d| d.activities.is_empty()));
+    }
+
+    #[test]
+    fn ac7_each_history_day_lists_its_activities_in_entry_order() {
+        use dietlock_core::{Activity, ActivityKind};
+        let today = day("2026-11-09");
+        let activities = [
+            StoredActivity::new(
+                9,
+                Activity::new(day("2026-10-01"), ActivityKind::Run, "vieux").unwrap(),
+            ),
+            StoredActivity::new(
+                3,
+                Activity::new(day("2026-11-08"), ActivityKind::Bike, "pluie").unwrap(),
+            ),
+            StoredActivity::new(
+                1,
+                Activity::new(day("2026-11-09"), ActivityKind::Walk, "chien").unwrap(),
+            ),
+            StoredActivity::new(
+                2,
+                Activity::new(day("2026-11-09"), ActivityKind::Strength, "  ").unwrap(),
+            ),
+        ];
+        let l = Listing::new(
+            today,
+            10,
+            today,
+            ProposedIntake {
+                date: today,
+                forgotten_yesterday: false,
+            },
+            &[],
+            &[],
+            None,
+        )
+        .unwrap()
+        .attach_activities(&activities);
+        let plain = home("2026-11-09", 10, &[], &[], None);
+        assert_eq!(l.trend, plain.trend);
+        assert_eq!(l.energy_week, plain.energy_week);
+        assert_eq!(l.primary, plain.primary);
+        assert_eq!(l.subtitle, plain.subtitle);
+        let d9 = l.days.iter().find(|d| d.date == "2026-11-09").unwrap();
+        assert_eq!(
+            d9.activities,
+            vec![
+                ActivityView {
+                    id: 1,
+                    kind: "walk".to_owned(),
+                    note: Some("chien".to_owned()),
+                },
+                ActivityView {
+                    id: 2,
+                    kind: "strength".to_owned(),
+                    note: None,
+                },
+            ]
+        );
+        let d8 = l.days.iter().find(|d| d.date == "2026-11-08").unwrap();
+        assert_eq!(d8.activities.len(), 1);
+        assert_eq!(d8.activities[0].id, 3);
+        assert_eq!(d8.activities[0].kind, "bike");
+        assert_eq!(d8.activities[0].note.as_deref(), Some("pluie"));
+        let empty = l.days.iter().find(|d| d.date == "2026-11-07").unwrap();
+        assert!(empty.activities.is_empty());
+        assert!(
+            l.days
+                .iter()
+                .all(|d| d.activities.iter().all(|a| a.id != 9))
+        );
+        let json = serde_json::to_value(&d9.activities).unwrap();
+        assert_eq!(json[0]["id"], 1);
+        assert_eq!(json[0]["kind"], "walk");
+        assert_eq!(json[0]["note"], "chien");
+        assert!(json[1]["note"].is_null());
     }
 
     #[test]

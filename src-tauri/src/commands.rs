@@ -10,7 +10,7 @@ use dietlock_core::{
     parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
     proposed_intake_date as core_proposed_intake_date, proposed_weigh_in_date, trend,
 };
-use dietlock_store::{SaveError, Store};
+use dietlock_store::{SaveError, Store, StoredActivity};
 use tauri::State;
 
 use crate::view::{
@@ -240,6 +240,7 @@ pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
         today: intakes.iter().any(|i| i.date() == today),
     };
     let proposed = core_proposed_intake_date(today, now, SwitchHour::default(), presence);
+    let activities = load_history_activities(&store, today)?;
     // The history starts 29 days back, so it covers both energy weeks (J−14 to yesterday).
     Listing::new(
         today,
@@ -250,7 +251,16 @@ pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
         &intakes,
         trend,
     )
+    .map(|listing| listing.attach_activities(&activities))
     .map_err(|_| view::duplicate_intake_message().to_owned())
+}
+
+/// Stored activities of the history window (J−29 to J), by date then by id.
+/// Older rows stay in the database and are not part of this list.
+fn load_history_activities(store: &Store, today: Day) -> Result<Vec<StoredActivity>, String> {
+    store
+        .list_activities(view::history_start(today), today)
+        .map_err(|e| view::store_message(&e))
 }
 
 /// Weight screen: one point per weigh-in and the trend of each day, over 30 days.
@@ -360,10 +370,24 @@ fn apply_save_activities(
     })
 }
 
+/// Removes one stored activity. An unknown id removes nothing. There is no
+/// confirmation: the history is reread with `list_days`.
+#[tauri::command]
+pub fn delete_activity(store: State<'_, Mutex<Store>>, id: i64) -> Result<(), String> {
+    let store = lock(&store)?;
+    apply_delete_activity(&store, id)
+}
+
+fn apply_delete_activity(store: &Store, id: i64) -> Result<(), String> {
+    store
+        .delete_activity(id)
+        .map_err(|e| view::store_message(&e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dietlock_core::ActivityKind;
+    use dietlock_core::{ActivityKind, EnergyWeek, energy_week};
 
     fn day(s: &str) -> Day {
         Day::parse(s).unwrap()
@@ -380,7 +404,12 @@ mod tests {
         s.list_activities(day(d), day(d))
             .unwrap()
             .iter()
-            .map(|a| (a.kind(), a.note().map(str::to_owned)))
+            .map(|row| {
+                (
+                    row.activity().kind(),
+                    row.activity().note().map(str::to_owned),
+                )
+            })
             .collect()
     }
 
@@ -497,6 +526,103 @@ mod tests {
             .map(|(k, _)| k)
             .collect();
         assert_eq!(kinds, [ActivityKind::Walk, ActivityKind::Bike]);
+    }
+
+    #[test]
+    fn ac7_activities_older_than_the_history_stay_stored_and_out_of_the_listing() {
+        let mut s = Store::open_in_memory().unwrap();
+        let today = day("2026-11-09");
+        apply_save_activities(
+            &mut s,
+            today,
+            "2026-10-01",
+            vec![input(Some("run"), "vieux")],
+        )
+        .unwrap();
+        apply_save_activities(&mut s, today, "2026-11-09", vec![input(Some("walk"), "")]).unwrap();
+        let listed = load_history_activities(&s, today).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].activity().kind(), ActivityKind::Walk);
+        assert_eq!(
+            s.list_activities(day("2026-10-01"), day("2026-10-01"))
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn ac9_an_unknown_activity_id_is_a_no_op() {
+        let mut s = filled_store();
+        apply_save_activities(
+            &mut s,
+            day("2026-10-14"),
+            "2026-10-13",
+            vec![input(Some("run"), "")],
+        )
+        .unwrap();
+        let before = stored(&s, "2026-10-13");
+        apply_delete_activity(&s, 404).unwrap();
+        assert_eq!(stored(&s, "2026-10-13"), before);
+    }
+
+    #[test]
+    fn ac10_adding_and_deleting_an_activity_leaves_trend_energy_and_macro_means() {
+        let mut s = Store::open_in_memory().unwrap();
+        let today = day("2026-11-09");
+        for (d, w) in [
+            ("2026-11-06", 800u16),
+            ("2026-11-07", 810),
+            ("2026-11-08", 820),
+            ("2026-11-09", 830),
+        ] {
+            s.save_weigh_in(&WeighIn::new(day(d), w, true).unwrap(), false)
+                .unwrap();
+        }
+        s.save_intake(
+            &Intake::new(day("2026-11-08"), 1500, 2000, 700, Some(2000)).unwrap(),
+            false,
+        )
+        .unwrap();
+        let weigh = s.get_weigh_in(day("2026-11-09")).unwrap();
+        let intake = s.get_intake(day("2026-11-08")).unwrap();
+        let before = figures(&s, today);
+        assert!(before.0.is_some(), "the fixture has a trend");
+        assert!(before.1.is_some(), "the fixture has an energy mean");
+        apply_save_activities(
+            &mut s,
+            today,
+            "2026-11-09",
+            vec![input(Some("walk"), "chien"), input(Some("strength"), "")],
+        )
+        .unwrap();
+        assert_eq!(figures(&s, today), before);
+        assert_eq!(s.get_weigh_in(day("2026-11-09")).unwrap(), weigh);
+        assert_eq!(s.get_intake(day("2026-11-08")).unwrap(), intake);
+        let id = s.list_activities(today, today).unwrap()[0].id();
+        apply_delete_activity(&s, id).unwrap();
+        assert_eq!(figures(&s, today), before);
+        assert_eq!(s.list_activities(today, today).unwrap().len(), 1);
+        apply_delete_activity(&s, id).unwrap();
+        assert_eq!(figures(&s, today), before);
+        assert_eq!(s.get_weigh_in(day("2026-11-09")).unwrap(), weigh);
+        assert_eq!(s.get_intake(day("2026-11-08")).unwrap(), intake);
+    }
+
+    /// Trend, energy mean and macro summary, read the same way as the commands.
+    fn figures(s: &Store, today: Day) -> (Option<u32>, Option<EnergyWeek>, view::MacroSummary) {
+        let from = view::history_start(today);
+        let weigh_from = from.minus_days(TREND_WINDOW_DAYS).unwrap_or(from);
+        let weigh_ins = s.list_weigh_ins(weigh_from, today).unwrap();
+        let intakes = s
+            .list_intakes(view::macro_summary_start(today), today)
+            .unwrap();
+        let energy_intakes = s.list_intakes(from, today).unwrap();
+        (
+            trend(&weigh_ins, today).unwrap(),
+            energy_week(&energy_intakes, today).unwrap(),
+            view::MacroSummary::new(today, &intakes).unwrap(),
+        )
     }
 
     fn filled_store() -> Store {

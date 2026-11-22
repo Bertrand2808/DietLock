@@ -30,7 +30,8 @@ pub fn run() {
             commands::weight_curve,
             commands::macro_summary,
             commands::delete_entry,
-            commands::save_activities
+            commands::save_activities,
+            commands::delete_activity
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

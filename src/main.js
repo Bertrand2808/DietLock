@@ -14,10 +14,17 @@ import {
   shortcutState,
 } from "./calendar.js";
 import {
+  ACTIVITY_MANAGE_HINT,
+  ACTIVITY_NO_NOTE,
   ACTIVITY_TYPES,
+  activityBadgeText,
+  activityTooltipLines,
   addRow,
+  daysShownInHistory,
   emptyRow,
   formKeyAction,
+  keptOpenActivityDate,
+  nextOpenActivityDate,
   removeRow,
   rowIsEmpty,
   saveButtonText,
@@ -55,6 +62,8 @@ let seenIntakeDate = null;
 let openKind = null;
 let activityDate = null;
 let activityRows = [];
+let shownDays = [];
+let openActivityDate = null;
 let viewYear = 2026;
 let viewMonth = 1;
 let queue = [];
@@ -217,8 +226,10 @@ function deleteButton(day, block, name) {
 }
 
 function renderHistory(days) {
+  shownDays = days;
+  openActivityDate = keptOpenActivityDate(openActivityDate, days);
   const hist = $("hist");
-  const rows = days.filter((d) => d.weightLabel || d.detail);
+  const rows = daysShownInHistory(days);
   hist.replaceChildren();
   if (rows.length === 0) {
     hist.classList.remove("fade");
@@ -236,7 +247,7 @@ function renderHistory(days) {
   hist.append(title);
   for (const day of rows) {
     const row = document.createElement("div");
-    row.className = "day";
+    row.className = day.date === openActivityDate ? "day open" : "day";
     const date = document.createElement("span");
     date.className = "dt";
     date.textContent = day.label;
@@ -247,12 +258,99 @@ function renderHistory(days) {
     const detail = document.createElement("span");
     detail.className = "k";
     detail.textContent = day.detail ?? "";
+    const mark = document.createElement("span");
+    mark.className = "act-mark";
+    const activities = day.activities ?? [];
+    if (activities.length > 0) mark.append(activityBadge(day, activities));
     const acts = document.createElement("span");
     acts.className = "acts";
     if (day.weighIn) acts.append(deleteButton(day, "weighIn", "la pesée"));
     if (day.intake) acts.append(deleteButton(day, "intake", "l'alimentation"));
-    row.append(date, weight, detail, acts);
+    row.append(date, weight, detail, mark, acts);
     hist.append(row);
+    if (day.date === openActivityDate) hist.append(activityList(activities));
+  }
+}
+
+function activityBadge(day, activities) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = day.date === openActivityDate ? "act-badge on" : "act-badge";
+  button.dataset.date = day.date;
+  button.textContent = activityBadgeText(activities.length);
+  button.setAttribute("aria-expanded", day.date === openActivityDate ? "true" : "false");
+  button.setAttribute("aria-label", `${activityBadgeText(activities.length)} le ${day.label}`);
+  const tip = document.createElement("span");
+  tip.className = "act-tip";
+  tip.setAttribute("role", "tooltip");
+  for (const line of activityTooltipLines(activities)) {
+    const row = document.createElement("span");
+    row.className = "act-tip-line";
+    const type = document.createElement("b");
+    type.textContent = line.label;
+    row.append(type);
+    if (line.note) {
+      const note = document.createElement("span");
+      note.className = "act-tip-note";
+      note.textContent = ` · ${line.note}`;
+      row.append(note);
+    }
+    tip.append(row);
+  }
+  const hint = document.createElement("span");
+  hint.className = "act-tip-hint";
+  hint.textContent = ACTIVITY_MANAGE_HINT;
+  tip.append(hint);
+  button.append(tip);
+  button.addEventListener("click", () => {
+    openActivityDate = nextOpenActivityDate(openActivityDate, day.date);
+    renderHistory(shownDays);
+  });
+  return button;
+}
+
+function activityList(activities) {
+  const list = document.createElement("div");
+  list.className = "act-list";
+  for (const activity of activities) {
+    const row = document.createElement("div");
+    row.className = "act-item";
+    const type = document.createElement("span");
+    type.className = "hist-kind";
+    type.textContent = activityTooltipLines([activity])[0].label;
+    const note = document.createElement("span");
+    const text = activity.note ? activity.note : "";
+    if (text) {
+      note.className = "hist-note";
+      note.textContent = text;
+    } else {
+      note.className = "hist-note none";
+      note.textContent = ACTIVITY_NO_NOTE;
+    }
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "act-remove";
+    remove.dataset.id = String(activity.id);
+    remove.textContent = "Supprimer";
+    remove.addEventListener("click", () => removeStoredActivity(activity.id));
+    row.append(type, note, remove);
+    list.append(row);
+  }
+  return list;
+}
+
+async function removeStoredActivity(id) {
+  if (busy) return;
+  busy = true;
+  try {
+    await invoke("delete_activity", { id });
+    await refresh();
+  } catch (e) {
+    $("delete-text").textContent = errorText(e);
+    $("delete-yes").hidden = true;
+    $("delete-confirm").hidden = false;
+  } finally {
+    busy = false;
   }
 }
 
@@ -962,6 +1060,7 @@ async function saveActivities() {
   try {
     await invoke("save_activities", { date: activityDate, drafts: checked.drafts });
     closeActivityForm();
+    await refresh();
   } catch (e) {
     showBlockError("activity", errorText(e));
   } finally {

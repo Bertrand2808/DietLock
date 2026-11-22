@@ -51,6 +51,6 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Weigh-in](./weigh-in.md) covers saving today's fasted weight from the entry card.
 - [Intake](./intake.md) covers saving macros and optional water from the same card.
 - [Replace a day](./replace.md) covers the confirmation when that date already has a weigh-in or an intake.
-- [Activities](./activity.md) covers the `＋ Activité` button, the modal form, saving several rows for a date, cancelling, and a restart.
+- [Activities](./activity.md) covers the `＋ Activité` button, the modal form, the history badge, the tooltip, deleting one activity, and a restart.
 - [Macro week](./macro-week.md) covers the protein block under the weight curve on `Graphiques`: the 7-day mean, the signed gap, the empty cases, and a restart.
 - [Energy week](./energy-week.md) covers the 7-day kcal mean beside the weight trend, the signed gap, the empty cases, and a restart.
