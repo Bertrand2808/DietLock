@@ -239,6 +239,20 @@ test("a curve with no weight at all shows no kg scale", () => {
   assert.equal(texts.some((text) => /^\d+(,\d)? kg$/.test(text)), false);
 });
 
+test("the first box starts below the date range line", () => {
+  const canvas = mockCanvas();
+  paintReport(canvas, {
+    fromLabel: "mar. 10 nov.",
+    toLabel: "mar. 24 nov.",
+    days: [day("2026-11-12", {})],
+    trend: { startTenthKg: 800, endTenthKg: 786, variationTenthKg: -14 },
+  });
+  const rangeLine = canvas.calls.find((call) => call[0] === "fillText" && call[1].startsWith("du "));
+  const firstBox = canvas.calls.find((call) => call[0] === "moveTo");
+  const textHeight = 15;
+  assert.ok(firstBox[2] >= rangeLine[3] + textHeight, `${firstBox[2]} vs ${rangeLine[3]}`);
+});
+
 test("a long note wraps instead of running out of the card", () => {
   const ctx = mockCanvas().getContext();
   const lines = wrapText(ctx, LONG_NOTE, 200);
