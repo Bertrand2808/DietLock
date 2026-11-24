@@ -1,5 +1,5 @@
 # Functional spec — DietLock
-Updated: 2026-11-22
+Updated: 2026-11-24
 
 ## Goal
 - The user records their weight, macros and water in under 30 seconds, then sees whether they are on track: a weight trend, an alert on abnormal deviations, and their mean intake.
@@ -89,6 +89,17 @@ Updated: 2026-11-22
 - AC10 · Adding or deleting an Activity never changes the Trend, the Energy mean or the Macro means.
 - AC11 · A deleted Activity stays deleted after a restart.
 
+### Report
+- R1 · The report covers the 15 days ending today, today included, oldest first.
+- R2 · Each day shows its Weigh-in with the fasted flag, its Energy and Macros, its water, and its Activities with type and note.
+- R3 · A day or value without input shows nothing, never 0 nor an invented value.
+- R4 · The report shows the weight and Trend curve over the 15 days, without interpolating a day without Trend.
+- R5 · The 15-day change is Trend(J) − Trend(J−14), shown only when both ends have a Trend.
+- R6 · The report never shows an Alert.
+- R7 · The report includes a note that an empty value means nothing was entered and that Energy = 4P + 4C + 9F.
+- R8 · The report is an image copied for pasting into a message, not a file.
+- R9 · The user is told when the report has been copied, with its 15-day date range.
+
 ## Edge cases
 - A missing Intake is never a zero, in any mean or gap.
 - A missing previous period is never a zero gap.
@@ -99,4 +110,5 @@ Updated: 2026-11-22
 - Weight goals and macro targets.
 - Import from another tracking app.
 - Reminders and notifications.
+- PDF and CSV export of the report.
 - Linking a day's macros to the next day's Weigh-in in the analysis.
