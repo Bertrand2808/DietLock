@@ -1,5 +1,6 @@
 // The 15-day report image. The days come from the Rust `report` command.
-// This file only paints them and hands the PNG to the clipboard.
+// This file paints them on a canvas and hands the PNG to the clipboard.
+// The image is a narrow portrait column, so a phone shows it at full size.
 
 import { activityTypeLabel } from "./activities.js";
 import { trendRuns } from "./chart.js";
@@ -15,33 +16,112 @@ export const REPORT_COLORS = {
   accent: "#c0643d",
 };
 
-const WIDTH = 840;
-const PAD = 28;
+/** Logical width. The page shows the canvas at this width. */
+export const REPORT_WIDTH = 480;
+/** Pixel density of the canvas and of the exported PNG. */
+export const REPORT_SCALE = 2;
+
+const PAD = 20;
+const GAP = 8;
+const ROW = 22;
+const CARD_PAD = 12;
+const BODY_FONT = "15px sans-serif";
+const BOLD_FONT = "600 15px sans-serif";
+const INNER_WIDTH = REPORT_WIDTH - PAD * 2;
+const WATER_COLUMN = 80;
+const SCALE_LABEL_WIDTH = 64;
+const HEADER_HEIGHT = 64;
+const TREND_HEIGHT = 72;
+const CURVE_HEIGHT = 196;
+const FOOTER_HEIGHT = 36;
 
 export function copiedMessage(report) {
   return `Rapport copié · 15 jours, du ${report.fromLabel} au ${report.toLabel}`;
 }
 
-/** Lines of one card. A missing value adds no line, so the cell stays empty. */
-export function cardLines(day) {
-  const lines = [];
-  if (day.weight) lines.push(day.notFasted ? `${day.weight} · pas à jeun` : day.weight);
-  if (day.energyKcal != null) lines.push(`${grouped(day.energyKcal)} kcal`);
-  if (day.proteinG != null) lines.push(`P ${day.proteinG} · G ${day.carbsG} · L ${day.fatG}`);
-  if (day.water != null) lines.push(`${day.water} L`);
-  for (const activity of day.activities ?? []) {
-    const label = activityTypeLabel(activity.kind);
-    lines.push(activity.note ? `${label} · ${activity.note}` : label);
-  }
-  return lines;
+function plural(count, singular, pluralForm) {
+  return count > 1 ? pluralForm : singular;
+}
+
+function countedDays(count) {
+  if (count === 0) return "aucun jour saisi";
+  return `${count} ${plural(count, "jour saisi", "jours saisis")}`;
+}
+
+/** Rows of the summary block. A mean without a counted day reads « — » (R12). */
+export function summaryRows(summary) {
+  const grams = (value) => (value == null ? "—" : `${value} g`);
+  return [
+    {
+      label: "Énergie",
+      note: countedDays(summary.intakeDays),
+      value: summary.energyKcal == null ? "—" : `${grouped(summary.energyKcal)} kcal`,
+    },
+    { label: "Protéines", note: countedDays(summary.intakeDays), value: grams(summary.proteinG) },
+    { label: "Glucides", note: countedDays(summary.intakeDays), value: grams(summary.carbsG) },
+    { label: "Lipides", note: countedDays(summary.intakeDays), value: grams(summary.fatG) },
+    {
+      label: "Eau",
+      note: countedDays(summary.waterDays),
+      value: summary.water == null ? "—" : `${summary.water} L`,
+    },
+    {
+      label: "Activité",
+      note: "",
+      value: `${summary.activityDays} ${plural(summary.activityDays, "jour", "jours")}`,
+    },
+  ];
 }
 
 function grouped(kcal) {
-  return String(kcal).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
+  return String(kcal).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
 }
 
-function cardHeight(lines) {
-  return Math.max(36, 12 + Math.max(lines.length, 1) * 16);
+/** Words wrapped to `maxWidth`. A single word wider than that stays on its own line. */
+export function wrapText(ctx, text, maxWidth) {
+  const lines = [];
+  let current = "";
+  for (const word of text.split(" ")) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && ctx.measureText(candidate).width > maxWidth) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+/**
+ * What one day card says, line by line. A missing value adds nothing, so its
+ * cell stays empty (R3). `activityLines` are already wrapped.
+ */
+function layoutCard(ctx, day) {
+  ctx.font = BODY_FONT;
+  const activityWidth = INNER_WIDTH - CARD_PAD * 2 - WATER_COLUMN;
+  const activityLines = [];
+  for (const activity of day.activities ?? []) {
+    const label = activityTypeLabel(activity.kind);
+    const text = activity.note ? `${label} · ${activity.note}` : label;
+    activityLines.push(...wrapText(ctx, text, activityWidth));
+  }
+  const hasStats = day.energyKcal != null || day.proteinG != null;
+  const hasWater = day.water != null;
+  const lowerRows = Math.max(activityLines.length, hasWater ? 1 : 0);
+  const rows = 1 + (hasStats ? 1 : 0) + lowerRows;
+  return {
+    day,
+    activityLines,
+    hasStats,
+    height: CARD_PAD * 2 + rows * ROW,
+  };
+}
+
+function weightText(day) {
+  if (!day.weight) return "";
+  return day.notFasted ? `${day.weight} · pas à jeun` : day.weight;
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -54,86 +134,143 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-/** Paints the report onto `canvas`. The clipboard then exports that canvas. */
-export function paintReport(canvas, report) {
-  const blocks = report.days.map((day) => ({ day, lines: cardLines(day) }));
-  let height = PAD + 56;
-  if (report.trend) height += 72;
-  if (report.points) height += 188;
-  for (const block of blocks) height += cardHeight(block.lines) + 8;
-  height += 28;
-  height += PAD;
-
-  canvas.width = WIDTH;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = REPORT_COLORS.bg;
-  ctx.fillRect(0, 0, WIDTH, height);
-  ctx.textBaseline = "top";
-  ctx.fillStyle = REPORT_COLORS.ink;
-  ctx.font = "600 22px sans-serif";
-  ctx.fillText("15 jours", PAD, PAD);
-  ctx.fillStyle = REPORT_COLORS.muted;
-  ctx.font = "13px sans-serif";
-  ctx.fillText(`du ${report.fromLabel} au ${report.toLabel}`, PAD, PAD + 28);
-
-  let y = PAD + 56;
-  if (report.trend) y = paintTrend(ctx, report.trend, y);
-  if (report.points) y = paintCurve(ctx, report.points, y);
-  for (const block of blocks) {
-    const h = cardHeight(block.lines);
-    roundRect(ctx, PAD, y, WIDTH - PAD * 2, h, 8);
-    ctx.fillStyle = REPORT_COLORS.card;
-    ctx.fill();
-    ctx.strokeStyle = REPORT_COLORS.line;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = REPORT_COLORS.ink;
-    ctx.font = "600 13px sans-serif";
-    ctx.fillText(block.day.label, PAD + 12, y + 10);
-    ctx.font = "13px sans-serif";
-    let lineY = y + 10;
-    for (const line of block.lines) {
-      ctx.fillStyle = REPORT_COLORS.ink;
-      ctx.fillText(line, PAD + 160, lineY);
-      lineY += 16;
-    }
-    y += h + 8;
-  }
-  ctx.fillStyle = REPORT_COLORS.muted;
-  ctx.font = "12px sans-serif";
-  ctx.fillText(REPORT_FOOTER, PAD, y + 4);
-  return canvas;
-}
-
-function paintTrend(ctx, trend, y) {
-  roundRect(ctx, PAD, y, WIDTH - PAD * 2, 60, 8);
+function paintBox(ctx, y, height) {
+  roundRect(ctx, PAD, y, INNER_WIDTH, height, 8);
   ctx.fillStyle = REPORT_COLORS.card;
   ctx.fill();
   ctx.strokeStyle = REPORT_COLORS.line;
   ctx.lineWidth = 1;
   ctx.stroke();
-  ctx.fillStyle = REPORT_COLORS.muted;
-  ctx.font = "12px sans-serif";
-  ctx.fillText("Tendance sur 15 jours", PAD + 14, y + 10);
+}
+
+function summaryHeight() {
+  return CARD_PAD * 2 + 7 * ROW;
+}
+
+/**
+ * Paints the report onto `canvas` at `REPORT_SCALE`. The clipboard exports
+ * that same canvas, and the « Rapport » page shows it.
+ */
+export function paintReport(canvas, report) {
+  canvas.width = REPORT_WIDTH * REPORT_SCALE;
+  const ctx = canvas.getContext("2d");
+  const cards = report.days.map((day) => layoutCard(ctx, day));
+  let height = HEADER_HEIGHT;
+  if (report.trend) height += TREND_HEIGHT;
+  if (report.summary) height += summaryHeight() + GAP * 2;
+  if (report.points) height += CURVE_HEIGHT;
+  for (const card of cards) height += card.height + GAP;
+  height += FOOTER_HEIGHT + PAD;
+
+  canvas.height = height * REPORT_SCALE;
+  ctx.scale(REPORT_SCALE, REPORT_SCALE);
+  ctx.fillStyle = REPORT_COLORS.bg;
+  ctx.fillRect(0, 0, REPORT_WIDTH, height);
+  ctx.textBaseline = "top";
   ctx.fillStyle = REPORT_COLORS.ink;
-  ctx.font = "600 16px sans-serif";
+  ctx.font = "600 22px sans-serif";
+  ctx.fillText("15 jours", PAD, PAD);
+  ctx.fillStyle = REPORT_COLORS.muted;
+  ctx.font = BODY_FONT;
+  ctx.fillText(`du ${report.fromLabel} au ${report.toLabel}`, PAD, PAD + 30);
+
+  let y = HEADER_HEIGHT;
+  if (report.trend) y = paintTrend(ctx, report.trend, y);
+  if (report.summary) y = paintSummary(ctx, report.summary, y);
+  if (report.points) y = paintCurve(ctx, report.points, y);
+  for (const card of cards) y = paintCard(ctx, card, y);
+  ctx.fillStyle = REPORT_COLORS.muted;
+  ctx.font = BODY_FONT;
+  ctx.textAlign = "left";
+  ctx.fillText(REPORT_FOOTER, PAD, y + 8);
+  return canvas;
+}
+
+function paintCard(ctx, card, y) {
+  paintBox(ctx, y, card.height);
+  const left = PAD + CARD_PAD;
+  const right = REPORT_WIDTH - PAD - CARD_PAD;
+  let rowY = y + CARD_PAD;
+  ctx.fillStyle = REPORT_COLORS.ink;
+  ctx.font = BOLD_FONT;
+  ctx.textAlign = "left";
+  ctx.fillText(card.day.label, left, rowY);
+  ctx.font = BODY_FONT;
+  ctx.textAlign = "right";
+  ctx.fillText(weightText(card.day), right, rowY);
+  rowY += ROW;
+  if (card.hasStats) {
+    ctx.textAlign = "left";
+    if (card.day.energyKcal != null) ctx.fillText(`${grouped(card.day.energyKcal)} kcal`, left, rowY);
+    ctx.textAlign = "right";
+    if (card.day.proteinG != null) {
+      ctx.fillText(`P ${card.day.proteinG} · G ${card.day.carbsG} · L ${card.day.fatG}`, right, rowY);
+    }
+    rowY += ROW;
+  }
+  ctx.textAlign = "right";
+  if (card.day.water != null) ctx.fillText(`${card.day.water} L`, right, rowY);
+  ctx.textAlign = "left";
+  for (const line of card.activityLines) {
+    ctx.fillText(line, left, rowY);
+    rowY += ROW;
+  }
+  return y + card.height + GAP;
+}
+
+function paintSummary(ctx, summary, y) {
+  const height = summaryHeight();
+  paintBox(ctx, y, height);
+  const left = PAD + CARD_PAD;
+  const right = REPORT_WIDTH - PAD - CARD_PAD;
+  let rowY = y + CARD_PAD;
+  ctx.fillStyle = REPORT_COLORS.muted;
+  ctx.font = BODY_FONT;
+  ctx.textAlign = "left";
+  ctx.fillText("Moyenne par jour", left, rowY);
+  rowY += ROW;
+  for (const row of summaryRows(summary)) {
+    ctx.textAlign = "left";
+    ctx.fillStyle = REPORT_COLORS.ink;
+    ctx.font = BODY_FONT;
+    ctx.fillText(row.label, left, rowY);
+    if (row.note) {
+      ctx.fillStyle = REPORT_COLORS.muted;
+      ctx.fillText(`· ${row.note}`, left + 92, rowY);
+    }
+    ctx.textAlign = "right";
+    ctx.fillStyle = REPORT_COLORS.ink;
+    ctx.font = BOLD_FONT;
+    ctx.fillText(row.value, right, rowY);
+    rowY += ROW;
+  }
+  ctx.textAlign = "left";
+  return y + height + GAP * 2;
+}
+
+function paintTrend(ctx, trend, y) {
+  paintBox(ctx, y, 60);
+  ctx.textAlign = "left";
+  ctx.fillStyle = REPORT_COLORS.muted;
+  ctx.font = BODY_FONT;
+  ctx.fillText("Tendance sur 15 jours", PAD + 14, y + 8);
+  ctx.fillStyle = REPORT_COLORS.ink;
+  ctx.font = "600 18px sans-serif";
   ctx.fillText(
     `${formatTenth(trend.startTenthKg)} → ${formatTenth(trend.endTenthKg)} kg`,
     PAD + 14,
-    y + 30,
+    y + 31,
   );
   ctx.fillStyle = REPORT_COLORS.accent;
-  ctx.font = "600 16px sans-serif";
   ctx.textAlign = "right";
-  ctx.fillText(formatDelta(trend.variationTenthKg), WIDTH - PAD - 14, y + 30);
+  ctx.fillText(formatDelta(trend.variationTenthKg), REPORT_WIDTH - PAD - 14, y + 31);
   ctx.textAlign = "left";
-  return y + 72;
+  return y + TREND_HEIGHT;
 }
 
 function paintCurve(ctx, points, y) {
-  const left = PAD + 8;
-  const right = WIDTH - PAD - 28;
+  const left = PAD + SCALE_LABEL_WIDTH;
+  const right = REPORT_WIDTH - PAD - 20;
   const top = y + 8;
   const bottom = y + 150;
   const innerW = right - left;
@@ -151,11 +288,21 @@ function paintCurve(ctx, points, y) {
   ctx.strokeStyle = REPORT_COLORS.line;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(left, top);
-  ctx.lineTo(right, top);
-  ctx.moveTo(left, bottom);
-  ctx.lineTo(right, bottom);
+  const ticks = scaleTicks(scale);
+  for (const tick of ticks) {
+    ctx.moveTo(left, yAt(tick));
+    ctx.lineTo(right, yAt(tick));
+  }
   ctx.stroke();
+
+  ctx.fillStyle = REPORT_COLORS.muted;
+  ctx.font = BODY_FONT;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  if (values.length > 0) {
+    for (const tick of ticks) ctx.fillText(`${formatKg(tick)} kg`, left - 8, yAt(tick));
+  }
+  ctx.textBaseline = "top";
 
   ctx.strokeStyle = REPORT_COLORS.accent;
   ctx.lineWidth = 2;
@@ -184,17 +331,26 @@ function paintCurve(ctx, points, y) {
     ctx.fill();
   }
 
-  ctx.font = "11px sans-serif";
+  ctx.font = BODY_FONT;
   const mid = Math.round((points.length - 1) / 2);
   ctx.textAlign = "left";
-  ctx.fillText(points[0]?.label ?? "", left, bottom + 6);
+  ctx.fillText(points[0]?.label ?? "", left, bottom + 8);
   ctx.textAlign = "center";
-  if (points[mid]) ctx.fillText(points[mid].label, xAt(mid), bottom + 6);
+  if (points[mid]) ctx.fillText(points[mid].label, xAt(mid), bottom + 8);
   ctx.textAlign = "right";
   const last = points[points.length - 1];
-  if (last) ctx.fillText(last.label, right, bottom + 6);
+  if (last) ctx.fillText(last.label, right, bottom + 8);
   ctx.textAlign = "left";
-  return y + 188;
+  return y + CURVE_HEIGHT;
+}
+
+/** Top, middle and bottom of the scale, in kg. The middle can be a half. */
+function scaleTicks(scale) {
+  return [scale.hi, (scale.lo + scale.hi) / 2, scale.lo];
+}
+
+function formatKg(kg) {
+  return String(kg).replace(".", ",");
 }
 
 function scaleOf(values) {
@@ -208,23 +364,15 @@ function scaleOf(values) {
 }
 
 function formatTenth(tenth) {
-  const sign = tenth < 0 ? "\u2212" : "";
+  const sign = tenth < 0 ? "−" : "";
   const abs = Math.abs(tenth);
   return `${sign}${Math.floor(abs / 10)},${abs % 10}`;
 }
 
 function formatDelta(tenth) {
-  const sign = tenth < 0 ? "\u2212" : tenth > 0 ? "+" : "";
+  const sign = tenth < 0 ? "−" : tenth > 0 ? "+" : "";
   const abs = Math.abs(tenth);
   return `${sign}${Math.floor(abs / 10)},${abs % 10} kg`;
-}
-
-export function paintThumb(thumb, source) {
-  const width = 180;
-  const scale = width / source.width;
-  thumb.width = width;
-  thumb.height = Math.max(1, Math.round(source.height * scale));
-  thumb.getContext("2d").drawImage(source, 0, 0, thumb.width, thumb.height);
 }
 
 export function pngBlob(canvas) {
