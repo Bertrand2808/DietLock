@@ -20,5 +20,14 @@ Updated: 2026-11-22
 - Activities outside the 30-day history window stay in the database and are not shown in the listing.
 - Data stays on the device; there is no network.
 
+## Report
+- The report image is drawn in the JavaScript frontend on a canvas and exported as a PNG with `canvas.toBlob('image/png')`; it is not rendered in Rust, and no new crate or npm package is added.
+- The 15-day window ending today is assembled from `list_days` (day cards: Weigh-in with the fasted flag, Energy and Macros, water, Activities with type and note) and `weight_curve` (weight and Trend points, plus `shortVariation`); days are shown oldest first; the `alert` field is ignored.
+- Today's date is `listing.today`, produced by the Tauri command from the system clock; `dietlock-core` stays clock-free, and the report does not use the frontend `localToday()`; a test supplies a fixed `Day` to `Listing::new` and `WeightCurve::build`.
+- The 15-day box shows the Trend of J−14, the Trend of today and `shortVariation` (Trend(J) − Trend(J−14), in displayed tenths); the box is omitted when either end has no Trend; a day without Trend has no Trend point and is not interpolated.
+- On a click on « Rapport », the PNG is written to the system clipboard with `navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlobPromise })])`, keeping the blob promise inside the `ClipboardItem` so WebKit retains the user gesture; no `tauri-plugin-clipboard-manager` and no new Tauri permission.
+- If that write is refused, the button does not show « ✓ Copié », a failure message is shown, and no plugin is added; if macOS refuses the Web API, work stops and Bertrand is asked.
+- The in-app thumbnail is painted on a canvas, because the current CSP (`default-src 'self'`) would block an `<img>` with a `blob:` or `data:` URL; the PNG is never sent over the network.
+
 ## Scheduled / real-time jobs
 - None.
