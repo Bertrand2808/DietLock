@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { trendRuns } from "./chart.js";
-import { copiedMessage, paintReport, reportClipboardItems } from "./report.js";
+import { REPORT_COLORS, REPORT_FOOTER, copiedMessage, paintReport, reportClipboardItems } from "./report.js";
 
 test("the copied message names the fifteen-day range", () => {
   assert.equal(
@@ -59,6 +59,40 @@ test("the trend box shows both ends and the gap, and is absent without a trend",
   assert.ok(withTrend.includes("\u22121,4 kg"));
   const without = paintedTexts([day("2026-11-24", {})], { trend: null, points: null });
   assert.equal(without.includes("Tendance sur 15 jours"), false);
+});
+
+test("an entered zero is drawn and a missing day stays blank, with no alert colour", () => {
+  const canvas = mockCanvas();
+  paintReport(canvas, {
+    fromLabel: "mar. 10 nov.",
+    toLabel: "mar. 24 nov.",
+    days: [
+      day("2026-11-12", {
+        label: "jeu. 12 nov.",
+        energyKcal: 0,
+        proteinG: "0",
+        carbsG: "0",
+        fatG: "0",
+        water: "0",
+      }),
+      day("2026-11-13", { label: "ven. 13 nov." }),
+      day("2026-11-24", { label: "mar. 24 nov.", weight: "82,0 kg" }),
+    ],
+  });
+  const texts = canvas.calls.filter((call) => call[0] === "fillText").map((call) => call[1]);
+  const fills = canvas.calls.filter((call) => call[0] === "fillStyle").map((call) => call[1]);
+  assert.ok(texts.includes("0 kcal"));
+  assert.ok(texts.includes("P 0 · G 0 · L 0"));
+  assert.ok(texts.includes("0 L"));
+  assert.ok(texts.includes("ven. 13 nov."));
+  assert.equal(
+    texts.filter((text) => text.includes("kcal")).length,
+    1,
+  );
+  assert.ok(texts.includes(REPORT_FOOTER));
+  assert.equal(texts.some((text) => text.includes("Alerte") || text.includes("⚠")), false);
+  const allowed = new Set(Object.values(REPORT_COLORS));
+  for (const fill of fills) assert.ok(allowed.has(fill), fill);
 });
 
 test("a card shows pas à jeun and leaves a missing intake blank", () => {

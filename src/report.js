@@ -4,6 +4,8 @@
 import { activityTypeLabel } from "./activities.js";
 import { trendRuns } from "./chart.js";
 
+export const REPORT_FOOTER = "Case vide = rien saisi. Énergie = 4P+4G+9L.";
+
 export const REPORT_COLORS = {
   bg: "#f7f4ef",
   ink: "#2a2622",
@@ -59,6 +61,7 @@ export function paintReport(canvas, report) {
   if (report.trend) height += 72;
   if (report.points) height += 188;
   for (const block of blocks) height += cardHeight(block.lines) + 8;
+  height += 28;
   height += PAD;
 
   canvas.width = WIDTH;
@@ -97,6 +100,9 @@ export function paintReport(canvas, report) {
     }
     y += h + 8;
   }
+  ctx.fillStyle = REPORT_COLORS.muted;
+  ctx.font = "12px sans-serif";
+  ctx.fillText(REPORT_FOOTER, PAD, y + 4);
   return canvas;
 }
 

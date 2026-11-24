@@ -54,3 +54,4 @@ Keep implementation details out of the map. Name only user paths, stable handles
 - [Activities](./activity.md) covers the `＋ Activité` button, the modal form, the history badge, the tooltip, deleting one activity, and a restart.
 - [Macro week](./macro-week.md) covers the protein block under the weight curve on `Graphiques`: the 7-day mean, the signed gap, the empty cases, and a restart.
 - [Energy week](./energy-week.md) covers the 7-day kcal mean beside the weight trend, the signed gap, the empty cases, and a restart.
+- [Report](./report.md) covers the `Rapport` button, the copied 15-day image, the trend box, empty days, and the absence of an alert on the image.

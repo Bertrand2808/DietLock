@@ -2046,6 +2046,55 @@ mod tests {
     }
 
     #[test]
+    fn report_distinguishes_an_empty_day_from_a_zero_intake() {
+        let today = "2026-11-24";
+        let zero = Intake::new(day("2026-11-12"), 0, 0, 0, Some(0)).unwrap();
+        let report = Report::assemble(
+            &home(today, 10, &[], &[zero], None),
+            &WeightCurve::build(day(today), &[], CURVE_SHORT_DAYS).unwrap(),
+        );
+        let entered = report
+            .days
+            .iter()
+            .find(|row| row.date == "2026-11-12")
+            .unwrap();
+        assert_eq!(entered.energy_kcal, Some(0));
+        assert_eq!(entered.protein_g.as_deref(), Some("0"));
+        assert_eq!(entered.carbs_g.as_deref(), Some("0"));
+        assert_eq!(entered.fat_g.as_deref(), Some("0"));
+        assert_eq!(entered.water.as_deref(), Some("0"));
+        let empty = report
+            .days
+            .iter()
+            .find(|row| row.date == "2026-11-13")
+            .unwrap();
+        assert_eq!(empty.energy_kcal, None);
+        assert_eq!(empty.protein_g, None);
+        assert_eq!(empty.carbs_g, None);
+        assert_eq!(empty.fat_g, None);
+        assert_eq!(empty.water, None);
+        assert_eq!(empty.weight, None);
+        assert!(empty.activities.is_empty());
+    }
+
+    #[test]
+    fn report_ignores_an_alert() {
+        let today = "2026-11-24";
+        let mut weigh_ins = fasted_back("2026-11-23", 4, 790);
+        weigh_ins.push(weigh(today, 820));
+        let listing = home(today, 10, &weigh_ins, &[], None);
+        assert!(listing.days[0].alert, "the home row is in alert");
+        let curve = WeightCurve::build(day(today), &weigh_ins, CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(&listing, &curve);
+        let card = report.days.iter().find(|row| row.date == today).unwrap();
+        assert_eq!(card.weight.as_deref(), Some("82,0 kg"));
+        assert!(!card.not_fasted);
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(!json.contains("alert"), "{json}");
+        assert!(!json.contains('⚠'), "{json}");
+    }
+
+    #[test]
     fn an_unknown_field_is_refused_in_french() {
         let msg = validation_message(&ValidationError::OutOfRange {
             field: "unknown",
