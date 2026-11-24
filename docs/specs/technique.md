@@ -31,10 +31,13 @@ Updated: 2026-11-24
 - The canvas has a logical width of 480 px and is drawn at ×2 (960 px) for display and export; fonts are at least 15 px logical.
 - `invoke("report")` is called and the canvas repainted each time the « Rapport » tab is shown; nothing is cached or stored.
 - The summary (means of Energy, P, G, L and water, counted-day counts, days with an Activity) is a field of `Report`, computed in `Report::assemble` in `view.rs` as a pure tested function. Its rounding reuses E5 and M5, and its window includes today.
+- « Télécharger » opens the native save dialog with `tauri-plugin-dialog` (permission `dialog:allow-save` in `src-tauri/capabilities/default.json`), then sends the PNG bytes of the displayed canvas to the Rust command `save_report_png(path, bytes)`. The command refuses a path without a `.png` extension and writes the file. No `tauri-plugin-fs` is added, and the dialog plugin's licence must be on the `deny.toml` allowlist.
+- The PNG saved is the one `canvas.toBlob('image/png')` gives for the displayed canvas, the same as the copy. The suggested file name is built from `report.from` and `report.to`.
 - The toast is a fixed-position text element, hidden after 8 s; hover pauses the timer and a click closes it.
 
 ## Decision journal
 - 2026-11-24 · The report is repainted at each tab display, drawn at ×2, with the summary computed in `Report::assemble` (DEV-85).
+- 2026-11-24 · The save uses `tauri-plugin-dialog` and a Rust write command, without `tauri-plugin-fs` (DEV-85).
 
 ## Scheduled / real-time jobs
 - None.
