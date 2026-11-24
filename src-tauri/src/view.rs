@@ -530,6 +530,26 @@ pub struct ReportActivity {
     pub note: Option<String>,
 }
 
+/// One plotted day. A missing Trend stays `None` and is not filled in (R4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportPoint {
+    pub date: String,
+    pub label: String,
+    pub weigh_tenth_kg: Option<u16>,
+    pub trend_tenth_kg: Option<i32>,
+}
+
+/// Trend of J−14, Trend of today, and `shortVariation` (R5).
+/// Present only when both ends have a Trend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportTrend {
+    pub start_tenth_kg: i32,
+    pub end_tenth_kg: i32,
+    pub variation_tenth_kg: i32,
+}
+
 /// One day of the 15-day report. `None` means nothing was entered.
 /// An entered 0 is `Some`. The report has no alert (R6).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -562,6 +582,9 @@ pub struct Report {
     pub from_label: String,
     pub to_label: String,
     pub days: Vec<ReportDay>,
+    /// Same 15 days as the cards, oldest first.
+    pub points: Vec<ReportPoint>,
+    pub trend: Option<ReportTrend>,
 }
 
 impl Report {
@@ -581,6 +604,30 @@ impl Report {
             .collect::<Vec<_>>();
         let from = days.first();
         let to = days.last();
+        let points = curve
+            .days
+            .iter()
+            .map(|point| ReportPoint {
+                date: point.date.clone(),
+                label: point.label.clone(),
+                weigh_tenth_kg: point.weigh_tenth_kg,
+                trend_tenth_kg: point.trend_tenth_kg,
+            })
+            .collect::<Vec<_>>();
+        let trend = match (
+            points.first().and_then(|point| point.trend_tenth_kg),
+            points.last().and_then(|point| point.trend_tenth_kg),
+            curve.variation_tenth_kg,
+        ) {
+            (Some(start_tenth_kg), Some(end_tenth_kg), Some(variation_tenth_kg)) => {
+                Some(ReportTrend {
+                    start_tenth_kg,
+                    end_tenth_kg,
+                    variation_tenth_kg,
+                })
+            }
+            _ => None,
+        };
         Self {
             today: listing.today.clone(),
             from: from.map(|day| day.date.clone()).unwrap_or_default(),
@@ -590,6 +637,8 @@ impl Report {
             from_label: from.map(|day| day.label.clone()).unwrap_or_default(),
             to_label: to.map(|day| day.label.clone()).unwrap_or_default(),
             days,
+            points,
+            trend,
         }
     }
 }
@@ -1928,6 +1977,72 @@ mod tests {
             ]
         );
         assert!(report.days.iter().all(|row| row.date != "2026-11-09"));
+    }
+
+    fn fasted_back(end: &str, count: u16, tenth: u16) -> Vec<WeighIn> {
+        let mut date = day(end);
+        let mut out = Vec::new();
+        for _ in 0..count {
+            out.push(WeighIn::new(date, tenth, true).unwrap());
+            date = date.previous().unwrap();
+        }
+        out
+    }
+
+    #[test]
+    fn report_trend_box_is_the_displayed_short_variation() {
+        let today = "2026-11-24";
+        let mut weigh_ins = fasted_back("2026-11-10", 7, 800);
+        weigh_ins.extend(fasted_back(today, 7, 786));
+        let curve = WeightCurve::build(day(today), &weigh_ins, CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(&home(today, 10, &weigh_ins, &[], None), &curve);
+        let trend = report.trend.expect("both ends have a trend");
+        assert_eq!(trend.start_tenth_kg, 800);
+        assert_eq!(trend.end_tenth_kg, 786);
+        assert_eq!(trend.variation_tenth_kg, -14);
+        assert_eq!(curve.variation_tenth_kg, Some(-14));
+        assert_eq!(
+            trend.variation_tenth_kg,
+            trend.end_tenth_kg - trend.start_tenth_kg
+        );
+        let gap = report
+            .points
+            .iter()
+            .find(|point| point.date == "2026-11-16")
+            .unwrap();
+        assert_eq!(gap.trend_tenth_kg, None);
+        assert_eq!(gap.weigh_tenth_kg, None);
+        let before = report
+            .points
+            .iter()
+            .find(|point| point.date == "2026-11-13")
+            .unwrap();
+        let after = report
+            .points
+            .iter()
+            .find(|point| point.date == "2026-11-21")
+            .unwrap();
+        assert_eq!(before.trend_tenth_kg, Some(800));
+        assert_eq!(after.trend_tenth_kg, Some(786));
+    }
+
+    #[test]
+    fn report_omits_the_trend_box_when_an_end_has_no_trend() {
+        let today = "2026-11-24";
+        let only_today = fasted_back(today, 4, 790);
+        let curve = WeightCurve::build(day(today), &only_today, CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(&home(today, 10, &only_today, &[], None), &curve);
+        assert!(report.trend.is_none());
+        assert_eq!(curve.variation_tenth_kg, None);
+        assert!(report.points.first().unwrap().trend_tenth_kg.is_none());
+        assert!(report.points.last().unwrap().trend_tenth_kg.is_some());
+
+        let only_start = fasted_back("2026-11-10", 7, 800);
+        let curve = WeightCurve::build(day(today), &only_start, CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(&home(today, 10, &only_start, &[], None), &curve);
+        assert!(report.trend.is_none());
+        assert!(report.points.first().unwrap().trend_tenth_kg.is_some());
+        assert!(report.points.last().unwrap().trend_tenth_kg.is_none());
     }
 
     #[test]

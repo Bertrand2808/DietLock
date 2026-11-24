@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { trendRuns } from "./chart.js";
 import { copiedMessage, paintReport, reportClipboardItems } from "./report.js";
 
 test("the copied message names the fifteen-day range", () => {
@@ -32,6 +33,34 @@ test("the clipboard item keeps the pending png promise", async () => {
   assert.equal(settled, true);
 });
 
+test("a missing trend splits the line and is not a point of either run", () => {
+  const days = [
+    { trendTenthKg: 800 },
+    { trendTenthKg: 800 },
+    { trendTenthKg: null },
+    { trendTenthKg: 786 },
+  ];
+  const runs = trendRuns(days);
+  assert.deepEqual(runs, [[0, 1], [3]]);
+  assert.equal(runs.some((run) => run.includes(2)), false);
+});
+
+test("the trend box shows both ends and the gap, and is absent without a trend", () => {
+  const withTrend = paintedTexts([day("2026-11-24", { weight: "78,6 kg" })], {
+    trend: { startTenthKg: 800, endTenthKg: 786, variationTenthKg: -14 },
+    points: [
+      { label: "10 nov.", weighTenthKg: 800, trendTenthKg: 800 },
+      { label: "16 nov.", weighTenthKg: null, trendTenthKg: null },
+      { label: "24 nov.", weighTenthKg: 786, trendTenthKg: 786 },
+    ],
+  });
+  assert.ok(withTrend.includes("Tendance sur 15 jours"));
+  assert.ok(withTrend.includes("80,0 → 78,6 kg"));
+  assert.ok(withTrend.includes("\u22121,4 kg"));
+  const without = paintedTexts([day("2026-11-24", {})], { trend: null, points: null });
+  assert.equal(without.includes("Tendance sur 15 jours"), false);
+});
+
 test("a card shows pas à jeun and leaves a missing intake blank", () => {
   const texts = paintedTexts([
     day("2026-11-11", { weight: "81,0 kg", notFasted: true }),
@@ -61,12 +90,13 @@ function day(date, fields) {
   };
 }
 
-function paintedTexts(days) {
+function paintedTexts(days, extra = {}) {
   const canvas = mockCanvas();
   paintReport(canvas, {
     fromLabel: "mar. 10 nov.",
     toLabel: "mar. 24 nov.",
     days,
+    ...extra,
   });
   return canvas.calls.filter((call) => call[0] === "fillText").map((call) => call[1]);
 }
