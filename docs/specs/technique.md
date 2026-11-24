@@ -1,5 +1,5 @@
 # Technical spec — DietLock
-Updated: 2026-11-22
+Updated: 2026-11-24
 
 ## Stack
 - Desktop app: Tauri 2, Rust backend (`dietlock-core`, `dietlock-store`), JavaScript frontend.
@@ -25,9 +25,16 @@ Updated: 2026-11-22
 - The 15-day window ending today is assembled from `list_days` (day cards: Weigh-in with the fasted flag, Energy and Macros, water, Activities with type and note) and `weight_curve` (weight and Trend points, plus `shortVariation`); days are shown oldest first; the `alert` field is ignored.
 - Today's date is `listing.today`, produced by the Tauri command from the system clock; `dietlock-core` stays clock-free, and the report does not use the frontend `localToday()`; a test supplies a fixed `Day` to `Listing::new` and `WeightCurve::build`.
 - The 15-day box shows the Trend of J−14, the Trend of today and `shortVariation` (Trend(J) − Trend(J−14), in displayed tenths); the box is omitted when either end has no Trend; a day without Trend has no Trend point and is not interpolated.
-- On a click on « Rapport », the PNG is written to the system clipboard with `navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlobPromise })])`, keeping the blob promise inside the `ClipboardItem` so WebKit retains the user gesture; no `tauri-plugin-clipboard-manager` and no new Tauri permission.
+- On a click on « Copier » on the « Rapport » page, the PNG is written to the system clipboard with `navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlobPromise })])`, keeping the blob promise inside the `ClipboardItem` so WebKit retains the user gesture; no `tauri-plugin-clipboard-manager` and no new Tauri permission.
 - If that write is refused, the button does not show « ✓ Copié », a failure message is shown, and no plugin is added; if macOS refuses the Web API, work stops and Bertrand is asked.
-- The in-app thumbnail is painted on a canvas, because the current CSP (`default-src 'self'`) would block an `<img>` with a `blob:` or `data:` URL; the PNG is never sent over the network.
+- The « Rapport » page shows the canvas it exports, at 480 px. The current CSP (`default-src 'self'`) would block an `<img>` with a `blob:` or `data:` URL, so no `<img>` is used. The PNG is never sent over the network.
+- The canvas has a logical width of 480 px and is drawn at ×2 (960 px) for display and export; fonts are at least 15 px logical.
+- `invoke("report")` is called and the canvas repainted each time the « Rapport » tab is shown; nothing is cached or stored.
+- The summary (means of Energy, P, G, L and water, counted-day counts, days with an Activity) is a field of `Report`, computed in `Report::assemble` in `view.rs` as a pure tested function. Its rounding reuses E5 and M5, and its window includes today.
+- The toast is a fixed-position text element, hidden after 8 s; hover pauses the timer and a click closes it.
+
+## Decision journal
+- 2026-11-24 · The report is repainted at each tab display, drawn at ×2, with the summary computed in `Report::assemble` (DEV-85).
 
 ## Scheduled / real-time jobs
 - None.
