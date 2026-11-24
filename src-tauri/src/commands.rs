@@ -14,8 +14,9 @@ use dietlock_store::{SaveError, Store, StoredActivity};
 use tauri::State;
 
 use crate::view::{
-    self, ActivityDraftInput, ActivitySaved, DeleteBlock, DeleteOutcome, DeleteTarget,
-    IntakeSaveOutcome, IntakeView, Listing, MacroSummary, SaveOutcome, WeighInView, WeightScreen,
+    self, ActivityDraftInput, ActivitySaved, CURVE_SHORT_DAYS, DeleteBlock, DeleteOutcome,
+    DeleteTarget, IntakeSaveOutcome, IntakeView, Listing, MacroSummary, Report, SaveOutcome,
+    WeighInView, WeightCurve, WeightScreen,
 };
 
 /// Current local day, read from the system clock.
@@ -223,9 +224,14 @@ pub fn proposed_intake_date(store: State<'_, Mutex<Store>>) -> Result<String, St
 pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
     let today = today()?;
     let now = now()?;
+    let store = lock(&store)?;
+    listing_on(&store, today, now)
+}
+
+/// The home listing `list_days` returns. The report assembles its cards from this.
+fn listing_on(store: &Store, today: Day, now: time::Time) -> Result<Listing, String> {
     let from = view::history_start(today);
     let weigh_from = from.minus_days(TREND_WINDOW_DAYS).unwrap_or(from);
-    let store = lock(&store)?;
     let weigh_ins = store
         .list_weigh_ins(weigh_from, today)
         .map_err(|e| view::store_message(&e))?;
@@ -240,7 +246,7 @@ pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
         today: intakes.iter().any(|i| i.date() == today),
     };
     let proposed = core_proposed_intake_date(today, now, SwitchHour::default(), presence);
-    let activities = load_history_activities(&store, today)?;
+    let activities = load_history_activities(store, today)?;
     // The history starts 29 days back, so it covers both energy weeks (J−14 to yesterday).
     Listing::new(
         today,
@@ -269,13 +275,31 @@ fn load_history_activities(store: &Store, today: Day) -> Result<Vec<StoredActivi
 pub fn weight_curve(store: State<'_, Mutex<Store>>) -> Result<WeightScreen, String> {
     let today = today()?;
     let store = lock(&store)?;
-    // Every saved weigh-in. The empty and single notices count the whole history,
-    // and a trend at the left edge of the chart reads six days before that edge.
-    let from = Day::parse("1000-01-01").map_err(|e| view::validation_message(&e))?;
-    let weigh_ins = store
-        .list_weigh_ins(from, today)
-        .map_err(|e| view::store_message(&e))?;
+    let weigh_ins = weigh_ins_for_curve(&store, today)?;
     WeightScreen::new(today, &weigh_ins).map_err(|_| view::duplicate_date_message().to_owned())
+}
+
+/// Every saved weigh-in. The empty and single notices count the whole history,
+/// and a trend at the left edge of the chart reads six days before that edge.
+fn weigh_ins_for_curve(store: &Store, today: Day) -> Result<Vec<WeighIn>, String> {
+    let from = Day::parse("1000-01-01").map_err(|e| view::validation_message(&e))?;
+    store
+        .list_weigh_ins(from, today)
+        .map_err(|e| view::store_message(&e))
+}
+
+/// The 15-day report. Cards come from the same listing as `list_days`.
+/// Points come from the same 15-day curve as `weight_curve`'s short window.
+#[tauri::command]
+pub fn report(store: State<'_, Mutex<Store>>) -> Result<Report, String> {
+    let today = today()?;
+    let now = now()?;
+    let store = lock(&store)?;
+    let listing = listing_on(&store, today, now)?;
+    let weigh_ins = weigh_ins_for_curve(&store, today)?;
+    let curve = WeightCurve::build(today, &weigh_ins, CURVE_SHORT_DAYS)
+        .map_err(|_| view::duplicate_date_message().to_owned())?;
+    Ok(Report::assemble(&listing, &curve))
 }
 
 /// Macro summaries of the « Graphiques » screen, computed from the stored

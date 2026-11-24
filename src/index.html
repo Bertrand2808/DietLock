@@ -16,10 +16,19 @@
           Graphiques
         </button>
       </div>
-      <button type="button" id="act-open" class="act-open" aria-haspopup="dialog">
-        <span class="plus" aria-hidden="true">＋</span>Activité
-      </button>
+      <div class="title-actions">
+        <button type="button" id="report" class="act-open">Rapport</button>
+        <button type="button" id="act-open" class="act-open" aria-haspopup="dialog">
+          <span class="plus" aria-hidden="true">＋</span>Activité
+        </button>
+      </div>
     </header>
+    <div id="report-result" class="report-result" hidden>
+      <canvas id="report-thumb" width="180" height="1"></canvas>
+      <p id="report-msg" role="status"></p>
+    </div>
+    <p id="report-error" class="report-error" role="alert" hidden>Le rapport n'a pas pu être copié.</p>
+    <canvas id="report-source"></canvas>
     <main class="col" id="screen-today">
       <header class="head">
         <div class="split">

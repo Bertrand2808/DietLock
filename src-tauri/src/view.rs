@@ -522,6 +522,107 @@ impl WeightCurve {
     }
 }
 
+/// One activity on a report card. `kind` is the stored key. The image labels it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportActivity {
+    pub kind: String,
+    pub note: Option<String>,
+}
+
+/// One day of the 15-day report. `None` means nothing was entered.
+/// An entered 0 is `Some`. The report has no alert (R6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportDay {
+    pub date: String,
+    pub label: String,
+    /// `78,4 kg` when the day has a weigh-in.
+    pub weight: Option<String>,
+    /// True only when that weigh-in was not fasted.
+    pub not_fasted: bool,
+    /// Whole kcal when the day has an intake, including 0.
+    pub energy_kcal: Option<u32>,
+    pub protein_g: Option<String>,
+    pub carbs_g: Option<String>,
+    pub fat_g: Option<String>,
+    /// Litres, `None` when water was not entered.
+    pub water: Option<String>,
+    pub activities: Vec<ReportActivity>,
+}
+
+/// The 15 days ending today, oldest first, taken from a listing and a curve.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Report {
+    /// `listing.today`. The report does not read a clock of its own.
+    pub today: String,
+    pub from: String,
+    pub to: String,
+    pub from_label: String,
+    pub to_label: String,
+    pub days: Vec<ReportDay>,
+}
+
+impl Report {
+    /// Cards follow `curve` (oldest first). Each card is the listing row of that
+    /// date, or an empty card when the listing has no such row. `curve` is the
+    /// 15-day [`WeightCurve`], the same window as `shortVariation`.
+    pub fn assemble(listing: &Listing, curve: &WeightCurve) -> Self {
+        let days = curve
+            .days
+            .iter()
+            .map(|point| {
+                report_day(
+                    point,
+                    listing.days.iter().find(|day| day.date == point.date),
+                )
+            })
+            .collect::<Vec<_>>();
+        let from = days.first();
+        let to = days.last();
+        Self {
+            today: listing.today.clone(),
+            from: from.map(|day| day.date.clone()).unwrap_or_default(),
+            to: to
+                .map(|day| day.date.clone())
+                .unwrap_or_else(|| listing.today.clone()),
+            from_label: from.map(|day| day.label.clone()).unwrap_or_default(),
+            to_label: to.map(|day| day.label.clone()).unwrap_or_default(),
+            days,
+        }
+    }
+}
+
+fn report_day(point: &CurveDay, source: Option<&DayView>) -> ReportDay {
+    let weigh_in = source.and_then(|day| day.weigh_in.as_ref());
+    let intake = source.and_then(|day| day.intake.as_ref());
+    ReportDay {
+        date: point.date.clone(),
+        label: source
+            .map(|day| day.label.clone())
+            .unwrap_or_else(|| point.label.clone()),
+        weight: weigh_in.map(|weigh_in| format!("{} kg", weigh_in.weight)),
+        not_fasted: weigh_in.is_some_and(|weigh_in| !weigh_in.fasted),
+        energy_kcal: intake.map(|intake| intake.energy_kcal),
+        protein_g: intake.map(|intake| intake.protein_g.clone()),
+        carbs_g: intake.map(|intake| intake.carbs_g.clone()),
+        fat_g: intake.map(|intake| intake.fat_g.clone()),
+        water: intake.and_then(|intake| intake.water.clone()),
+        activities: source
+            .map(|day| {
+                day.activities
+                    .iter()
+                    .map(|activity| ReportActivity {
+                        kind: activity.kind.clone(),
+                        note: activity.note.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+    }
+}
+
 /// The chart states that are a sentence rather than a series.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(
@@ -1743,6 +1844,90 @@ mod tests {
         assert!(!chart_note.is_empty());
         assert!(none.days.iter().all(|d| d.weigh_tenth_kg.is_none()));
         assert!(none.trend.is_none());
+    }
+
+    #[test]
+    fn report_covers_fifteen_days_ending_today_oldest_first() {
+        let today = "2026-11-24";
+        let weigh_ins = [
+            weigh("2026-11-09", 770),
+            weigh_at("2026-11-11", 810, false),
+            weigh(today, 800),
+        ];
+        let listing = home(today, 10, &weigh_ins, &[], None);
+        let curve = WeightCurve::build(day(today), &weigh_ins, CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(&listing, &curve);
+        assert_eq!(listing.today, today);
+        assert_eq!(report.today, today);
+        assert_eq!(report.days.len(), 15);
+        assert_eq!(report.from, "2026-11-10");
+        assert_eq!(report.to, today);
+        assert_eq!(report.from_label, "mar. 10 nov.");
+        assert_eq!(report.to_label, "mar. 24 nov.");
+        assert_eq!(report.days[0].date, "2026-11-10");
+        assert_eq!(report.days[14].date, today);
+        assert!(
+            report
+                .days
+                .windows(2)
+                .all(|pair| pair[0].date < pair[1].date)
+        );
+        assert!(report.days.iter().all(|row| row.date != "2026-11-09"));
+        let fed = report
+            .days
+            .iter()
+            .find(|row| row.date == "2026-11-11")
+            .unwrap();
+        assert_eq!(fed.weight.as_deref(), Some("81,0 kg"));
+        assert!(fed.not_fasted);
+        let fasted = report.days.iter().find(|row| row.date == today).unwrap();
+        assert_eq!(fasted.weight.as_deref(), Some("80,0 kg"));
+        assert!(!fasted.not_fasted);
+        let empty = report
+            .days
+            .iter()
+            .find(|row| row.date == "2026-11-12")
+            .unwrap();
+        assert!(empty.weight.is_none());
+        assert!(!empty.not_fasted);
+        assert_eq!(curve.days.len(), 15);
+    }
+
+    #[test]
+    fn report_keeps_activity_kind_and_note_in_entry_order() {
+        use dietlock_core::{Activity, ActivityKind};
+        let today = "2026-11-24";
+        let listing = home(today, 10, &[], &[], None).attach_activities(&[
+            StoredActivity::new(
+                1,
+                Activity::new(day("2026-11-24"), ActivityKind::Walk, "chien").unwrap(),
+            ),
+            StoredActivity::new(
+                2,
+                Activity::new(day("2026-11-24"), ActivityKind::Strength, "  ").unwrap(),
+            ),
+            StoredActivity::new(
+                3,
+                Activity::new(day("2026-11-09"), ActivityKind::Run, "dehors").unwrap(),
+            ),
+        ]);
+        let curve = WeightCurve::build(day(today), &[], CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(&listing, &curve);
+        let card = report.days.iter().find(|row| row.date == today).unwrap();
+        assert_eq!(
+            card.activities,
+            vec![
+                ReportActivity {
+                    kind: "walk".to_owned(),
+                    note: Some("chien".to_owned()),
+                },
+                ReportActivity {
+                    kind: "strength".to_owned(),
+                    note: None,
+                },
+            ]
+        );
+        assert!(report.days.iter().all(|row| row.date != "2026-11-09"));
     }
 
     #[test]

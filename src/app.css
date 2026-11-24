@@ -1093,11 +1093,16 @@ kbd {
   background: var(--acc);
 }
 
-/* Activity form (DEV-104). The button sits in the title bar, over the drag region. */
-.act-open {
+/* Activity form (DEV-104). The buttons sit in the title bar, over the drag region. */
+.title-actions {
   position: absolute;
   right: 14px;
   top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.act-open {
   border: 1px solid var(--line);
   background: var(--card);
   color: var(--fg);
@@ -1121,6 +1126,50 @@ kbd {
 .act-type:focus-within {
   outline: none;
   box-shadow: 0 0 0 3px var(--ring);
+}
+
+.report-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 640px;
+  max-width: calc(100% - 48px);
+  margin: 10px auto 0;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.report-result[hidden] {
+  display: none;
+}
+
+#report-msg {
+  margin: 0;
+  font-size: 13px;
+}
+
+#report-thumb {
+  flex: none;
+  width: 180px;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
+#report-source {
+  position: absolute;
+  left: -10000px;
+  top: 0;
+}
+
+.report-error {
+  width: 640px;
+  max-width: calc(100% - 48px);
+  margin: 10px auto 0;
+  color: var(--bad);
+  font-size: 13px;
 }
 
 .overlay {

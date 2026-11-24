@@ -32,6 +32,7 @@ import {
   validateRows,
 } from "./activities.js";
 import { renderChart } from "./chart.js";
+import { copiedMessage, paintReport, paintThumb, pngBlob, reportClipboardItems } from "./report.js";
 import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { energyCopy } from "./energy.js";
 import { renderMacroChart } from "./macro_chart.js";
@@ -1137,6 +1138,50 @@ $("macro-seg").addEventListener("click", (event) => {
 $("entry").addEventListener("submit", (event) => event.preventDefault());
 $("save").addEventListener("click", saveAll);
 $("act-open").addEventListener("click", openActivityForm);
+$("report").addEventListener("click", copyReport);
+
+let reportBusy = false;
+
+function copyReport() {
+  if (reportBusy) return;
+  reportBusy = true;
+  $("report").textContent = "Rapport";
+  $("report-result").hidden = true;
+  $("report-error").hidden = true;
+  const source = $("report-source");
+  let painted = null;
+  const pngBlobPromise = (async () => {
+    const report = await invoke("report");
+    paintReport(source, report);
+    paintThumb($("report-thumb"), source);
+    painted = report;
+    return pngBlob(source);
+  })();
+  navigator.clipboard
+    .write(reportClipboardItems(pngBlobPromise))
+    .then(() => {
+      if (!painted) {
+        showReportFailure();
+        return;
+      }
+      $("report").textContent = "✓ Copié";
+      $("report-msg").textContent = copiedMessage(painted);
+      $("report-result").hidden = false;
+    })
+    .catch(() => {
+      showReportFailure();
+    })
+    .finally(() => {
+      reportBusy = false;
+    });
+}
+
+function showReportFailure() {
+  $("report").textContent = "Rapport";
+  $("report-result").hidden = true;
+  $("report-error").hidden = false;
+}
+
 $("act-chip").addEventListener("click", () => togglePicker("activity"));
 $("act-add").addEventListener("click", () => {
   activityRows = addRow(activityRows);
