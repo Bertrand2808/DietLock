@@ -5,9 +5,9 @@ use std::sync::Mutex;
 
 use chrono::Timelike;
 use dietlock_core::{
-    ActivityDraft, Day, Intake, IntakePresence, SaveDecision, SwitchHour, TREND_WINDOW_DAYS,
-    WeighIn, build_activities, check_not_future, decide_intake, decide_water, decide_weigh_in,
-    parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
+    ActivityDraft, Day, Intake, IntakePresence, REPORT_DAYS, SaveDecision, SwitchHour,
+    TREND_WINDOW_DAYS, WeighIn, build_activities, check_not_future, decide_intake, decide_water,
+    decide_weigh_in, parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
     proposed_intake_date as core_proposed_intake_date, proposed_weigh_in_date, trend,
 };
 use dietlock_store::{SaveError, Store, StoredActivity};
@@ -299,7 +299,11 @@ pub fn report(store: State<'_, Mutex<Store>>) -> Result<Report, String> {
     let weigh_ins = weigh_ins_for_curve(&store, today)?;
     let curve = WeightCurve::build(today, &weigh_ins, CURVE_SHORT_DAYS)
         .map_err(|_| view::duplicate_date_message().to_owned())?;
-    Ok(Report::assemble(&listing, &curve))
+    let intakes = store
+        .list_intakes(today.minus_days(REPORT_DAYS - 1).unwrap_or(today), today)
+        .map_err(|e| view::store_message(&e))?;
+    Report::assemble(&listing, &curve, &intakes, today)
+        .map_err(|_| view::duplicate_intake_message().to_owned())
 }
 
 /// Macro summaries of the « Graphiques » screen, computed from the stored
