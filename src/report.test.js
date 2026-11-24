@@ -9,6 +9,8 @@ import {
   copiedMessage,
   paintReport,
   reportClipboardItems,
+  reportFileName,
+  savedMessage,
   summaryRows,
   wrapText,
 } from "./report.js";
@@ -17,6 +19,24 @@ test("the copied message names the fifteen-day range", () => {
   assert.equal(
     copiedMessage({ fromLabel: "mar. 10 nov.", toLabel: "mar. 24 nov." }),
     "Rapport copié · 15 jours, du mar. 10 nov. au mar. 24 nov.",
+  );
+});
+
+test("the saved file is named after the first and last day of the report", () => {
+  assert.equal(
+    reportFileName({ from: "2026-11-10", to: "2026-11-24" }),
+    "dietlock-rapport-2026-11-10_2026-11-24.png",
+  );
+});
+
+test("the saved message shows the file name whichever separator the path uses", () => {
+  assert.equal(
+    savedMessage("/Users/bertrand/Downloads/dietlock-rapport-2026-11-10_2026-11-24.png"),
+    "Rapport enregistré · dietlock-rapport-2026-11-10_2026-11-24.png",
+  );
+  assert.equal(
+    savedMessage("C:\\Users\\bertrand\\rapport.png"),
+    "Rapport enregistré · rapport.png",
   );
 });
 

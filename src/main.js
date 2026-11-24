@@ -32,7 +32,14 @@ import {
   validateRows,
 } from "./activities.js";
 import { renderChart } from "./chart.js";
-import { copiedMessage, paintReport, pngBlob, reportClipboardItems } from "./report.js";
+import {
+  copiedMessage,
+  paintReport,
+  pngBlob,
+  reportClipboardItems,
+  reportFileName,
+  savedMessage,
+} from "./report.js";
 import { TOAST_DELAY_MS, createAutoHide } from "./toast.js";
 import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { energyCopy } from "./energy.js";
@@ -1145,6 +1152,7 @@ $("entry").addEventListener("submit", (event) => event.preventDefault());
 $("save").addEventListener("click", saveAll);
 $("act-open").addEventListener("click", openActivityForm);
 $("report-copy").addEventListener("click", copyReport);
+$("report-save").addEventListener("click", saveReport);
 $("toast").addEventListener("mouseenter", () => toastTimer.pause());
 $("toast").addEventListener("mouseleave", () => toastTimer.resume());
 $("toast").addEventListener("click", hideToast);
@@ -1194,10 +1202,35 @@ async function paintReportScreen() {
     paintReport($("report-canvas"), report);
     shownReport = report;
     $("report-copy").disabled = false;
+    $("report-save").disabled = false;
   } catch (e) {
     shownReport = null;
     $("report-copy").disabled = true;
+    $("report-save").disabled = true;
     showReportError(errorText(e));
+  }
+}
+
+// « Télécharger »: the user picks a file, then the PNG of the displayed canvas is written there (R16).
+async function saveReport() {
+  if (reportBusy || !shownReport) return;
+  reportBusy = true;
+  $("report-error").hidden = true;
+  try {
+    const path = await window.__TAURI__.dialog.save({
+      defaultPath: reportFileName(shownReport),
+      filters: [{ name: "PNG", extensions: ["png"] }],
+    });
+    // Closing the dialog without a file changes nothing and says nothing.
+    if (path === null) return;
+    const blob = await pngBlob($("report-canvas"));
+    const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+    await invoke("save_report_png", { path, bytes });
+    showToast(savedMessage(path));
+  } catch (e) {
+    showReportError(errorText(e));
+  } finally {
+    reportBusy = false;
   }
 }
 

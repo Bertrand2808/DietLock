@@ -39,6 +39,20 @@ export function copiedMessage(report) {
   return `Rapport copié · 15 jours, du ${report.fromLabel} au ${report.toLabel}`;
 }
 
+/** Name proposed in the save dialog: first and last day of the 15 days (R16). */
+export function reportFileName(report) {
+  return `dietlock-rapport-${report.from}_${report.to}.png`;
+}
+
+/** Last part of a path, whichever separator the system uses. */
+export function fileBaseName(path) {
+  return path.split(/[\\/]/).pop();
+}
+
+export function savedMessage(path) {
+  return `Rapport enregistré · ${fileBaseName(path)}`;
+}
+
 function plural(count, singular, pluralForm) {
   return count > 1 ? pluralForm : singular;
 }
