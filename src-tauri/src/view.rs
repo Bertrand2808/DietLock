@@ -1023,6 +1023,16 @@ pub fn database_unavailable_message() -> &'static str {
     "La base de données est indisponible, redémarrez l'application."
 }
 
+/// Shown when the report file cannot be written (R16).
+pub fn report_save_failed_message() -> &'static str {
+    "Le rapport n'a pas pu être enregistré."
+}
+
+/// Shown when the chosen path is not a PNG file.
+pub fn report_not_png_message() -> &'static str {
+    "Le rapport s'enregistre dans un fichier .png."
+}
+
 /// Shown when the history contains two weigh-ins on the same day.
 pub fn duplicate_date_message() -> &'static str {
     "Deux pesées portent la même date."

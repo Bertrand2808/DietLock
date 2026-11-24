@@ -1,6 +1,7 @@
 //! IPC commands. Business rules live in `dietlock-core`; this module only
 //! reads the clock, locks the store and converts to the view types.
 
+use std::path::Path;
 use std::sync::Mutex;
 
 use chrono::Timelike;
@@ -412,6 +413,22 @@ fn apply_delete_activity(store: &Store, id: i64) -> Result<(), String> {
         .map_err(|e| view::store_message(&e))
 }
 
+/// Writes the report PNG at the path the user chose in the save dialog (R16).
+#[tauri::command]
+pub fn save_report_png(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    write_report_png(Path::new(&path), &bytes)
+}
+
+fn write_report_png(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let is_png = path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("png"));
+    if !is_png {
+        return Err(view::report_not_png_message().to_owned());
+    }
+    std::fs::write(path, bytes).map_err(|_| view::report_save_failed_message().to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,6 +436,48 @@ mod tests {
 
     fn day(s: &str) -> Day {
         Day::parse(s).unwrap()
+    }
+
+    /// A path in a fresh directory under the system temp dir.
+    fn temp_path(file: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "dietlock-report-{}-{}",
+            std::process::id(),
+            file.replace('.', "_")
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(file)
+    }
+
+    #[test]
+    fn r16_a_png_path_receives_exactly_the_bytes() {
+        let path = temp_path("rapport.png");
+        let bytes = [0x89, b'P', b'N', b'G', 1, 2, 3];
+        write_report_png(&path, &bytes).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn r16_the_png_extension_is_accepted_in_any_case() {
+        let path = temp_path("RAPPORT.PNG");
+        assert!(write_report_png(&path, &[1]).is_ok());
+    }
+
+    #[test]
+    fn r16_a_path_without_the_png_extension_is_refused_and_writes_nothing() {
+        for file in ["rapport.txt", "rapport"] {
+            let path = temp_path(file);
+            let error = write_report_png(&path, &[1]).unwrap_err();
+            assert_eq!(error, view::report_not_png_message(), "{file}");
+            assert!(!path.exists(), "{file}");
+        }
+    }
+
+    #[test]
+    fn r16_an_unwritable_path_reports_the_save_failure() {
+        let path = temp_path("missing").join("no-such-dir").join("rapport.png");
+        let error = write_report_png(&path, &[1]).unwrap_err();
+        assert_eq!(error, view::report_save_failed_message());
     }
 
     fn input(kind: Option<&str>, note: &str) -> ActivityDraftInput {

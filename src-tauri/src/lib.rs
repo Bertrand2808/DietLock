@@ -14,6 +14,7 @@ const DB_FILE: &str = "dietlock.sqlite";
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -29,6 +30,7 @@ pub fn run() {
             commands::list_days,
             commands::weight_curve,
             commands::report,
+            commands::save_report_png,
             commands::macro_summary,
             commands::delete_entry,
             commands::save_activities,
