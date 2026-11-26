@@ -271,14 +271,10 @@ function paintTrend(ctx, trend, y) {
   ctx.fillStyle = REPORT_COLORS.ink;
   ctx.font = "600 18px sans-serif";
   ctx.fillText(
-    `${formatTenth(trend.startTenthKg)} → ${formatTenth(trend.endTenthKg)} kg`,
+    `${formatTenth(trend.startTenthKg)} → ${formatTenth(trend.endTenthKg)} kg · Écart ${formatDelta(trend.variationTenthKg)}`,
     PAD + 14,
     y + 31,
   );
-  ctx.fillStyle = REPORT_COLORS.accent;
-  ctx.textAlign = "right";
-  ctx.fillText(formatDelta(trend.variationTenthKg), REPORT_WIDTH - PAD - 14, y + 31);
-  ctx.textAlign = "left";
   return y + TREND_HEIGHT;
 }
 
