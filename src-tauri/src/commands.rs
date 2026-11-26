@@ -459,7 +459,7 @@ mod tests {
 
     #[test]
     fn r16_the_png_extension_is_accepted_in_any_case() {
-        let path = temp_path("RAPPORT.PNG");
+        let path = temp_path("casse.PNG");
         assert!(write_report_png(&path, &[1]).is_ok());
     }
 
