@@ -56,7 +56,7 @@ function yScale(values) {
   return { lo, hi: ticks[ticks.length - 1], ticks };
 }
 
-function trendRuns(days) {
+export function trendRuns(days) {
   const runs = [];
   let current = [];
   days.forEach((day, index) => {

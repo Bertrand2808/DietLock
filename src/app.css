@@ -1093,11 +1093,16 @@ kbd {
   background: var(--acc);
 }
 
-/* Activity form (DEV-104). The button sits in the title bar, over the drag region. */
-.act-open {
+/* Activity form (DEV-104). The buttons sit in the title bar, over the drag region. */
+.title-actions {
   position: absolute;
   right: 14px;
   top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.act-open {
   border: 1px solid var(--line);
   background: var(--card);
   color: var(--fg);
@@ -1121,6 +1126,94 @@ kbd {
 .act-type:focus-within {
   outline: none;
   box-shadow: 0 0 0 3px var(--ring);
+}
+
+/* Report page. The canvas is shown at its logical width, so the page matches the copied image. */
+.report-col {
+  align-items: center;
+  overflow-y: auto;
+}
+
+.report-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 480px;
+  max-width: 100%;
+  padding-bottom: 12px;
+}
+
+.report-error {
+  margin: 0;
+  color: var(--bad);
+  font-size: 13px;
+}
+
+.report-error[hidden] {
+  display: none;
+}
+
+#report-canvas {
+  flex: none;
+  width: 480px;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+/* Floats over the page: it never moves the content. */
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 20;
+  max-width: 320px;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.toast[hidden] {
+  display: none;
+}
+
+.toast p {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Empties over the toast delay. Hovering pauses it, as it pauses the timer. */
+.toast-bar {
+  height: 3px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: var(--acc);
+  transform-origin: left;
+}
+
+.toast-bar.running {
+  animation: toast-countdown var(--toast-ms, 8000ms) linear forwards;
+}
+
+.toast:hover .toast-bar.running {
+  animation-play-state: paused;
+}
+
+@keyframes toast-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
 
 .overlay {

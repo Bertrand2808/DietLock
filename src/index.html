@@ -15,11 +15,28 @@
         <button type="button" id="tab-weight" role="tab" aria-selected="false" aria-controls="screen-weight">
           Graphiques
         </button>
+        <button type="button" id="tab-report" role="tab" aria-selected="false" aria-controls="screen-report">
+          Rapport
+        </button>
       </div>
-      <button type="button" id="act-open" class="act-open" aria-haspopup="dialog">
-        <span class="plus" aria-hidden="true">＋</span>Activité
-      </button>
+      <div class="title-actions">
+        <button type="button" id="act-open" class="act-open" aria-haspopup="dialog">
+          <span class="plus" aria-hidden="true">＋</span>Activité
+        </button>
+      </div>
     </header>
+    <div id="toast" class="toast" role="status" hidden>
+      <p id="toast-msg"></p>
+      <div id="toast-bar" class="toast-bar" aria-hidden="true"></div>
+    </div>
+    <main class="col report-col" id="screen-report" hidden>
+      <div class="report-bar">
+        <button type="button" id="report-copy" class="act-open">Copier</button>
+        <button type="button" id="report-save" class="act-open">Télécharger</button>
+        <p id="report-error" class="report-error" role="alert" hidden>Le rapport n'a pas pu être copié.</p>
+      </div>
+      <canvas id="report-canvas" role="img" aria-label="Rapport des 15 derniers jours"></canvas>
+    </main>
     <main class="col" id="screen-today">
       <header class="head">
         <div class="split">

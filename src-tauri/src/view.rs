@@ -4,9 +4,9 @@
 use dietlock_core::{
     ACTIVITY_NOTE_MAX_CHARS, ActivityDraft, Day, DuplicateDate, DuplicateIntakeDate,
     ENERGY_WEEK_DAYS, EnergyWeek, Intake, MACRO_G_MAX, MacroDay, MacroKind, MacroMean, MacroPeriod,
-    ProposedIntake, TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX, WEIGHT_TENTH_KG_MIN,
-    WeighIn, alert, display_tenth_kg, energy_kcal, energy_week, macro_days, macro_mean, trend,
-    variation,
+    ProposedIntake, ReportSummary, TREND_WINDOW_DAYS, ValidationError, WEIGHT_TENTH_KG_MAX,
+    WEIGHT_TENTH_KG_MIN, WeighIn, alert, display_tenth_kg, energy_kcal, energy_week, macro_days,
+    macro_mean, report_summary, trend, variation,
 };
 use dietlock_store::{StoreError, StoredActivity};
 use serde::{Deserialize, Serialize};
@@ -522,6 +522,205 @@ impl WeightCurve {
     }
 }
 
+/// One activity on a report card. `kind` is the stored key. The image labels it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportActivity {
+    pub kind: String,
+    pub note: Option<String>,
+}
+
+/// One plotted day. A missing Trend stays `None` and is not filled in (R4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportPoint {
+    pub date: String,
+    pub label: String,
+    pub weigh_tenth_kg: Option<u16>,
+    pub trend_tenth_kg: Option<i32>,
+}
+
+/// Trend of J−14, Trend of today, and `shortVariation` (R5).
+/// Present only when both ends have a Trend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportTrend {
+    pub start_tenth_kg: i32,
+    pub end_tenth_kg: i32,
+    pub variation_tenth_kg: i32,
+}
+
+/// One day of the 15-day report. `None` means nothing was entered.
+/// An entered 0 is `Some`. The report has no alert (R6).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportDay {
+    pub date: String,
+    pub label: String,
+    /// `78,4 kg` when the day has a weigh-in.
+    pub weight: Option<String>,
+    /// True only when that weigh-in was not fasted.
+    pub not_fasted: bool,
+    /// Whole kcal when the day has an intake, including 0.
+    pub energy_kcal: Option<u32>,
+    pub protein_g: Option<String>,
+    pub carbs_g: Option<String>,
+    pub fat_g: Option<String>,
+    /// Litres, `None` when water was not entered.
+    pub water: Option<String>,
+    pub activities: Vec<ReportActivity>,
+}
+
+/// Summary block of the report (R11–R14). A `None` mean is an absence, not 0 (R12).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportSummaryView {
+    /// Days counted behind the energy and macro means.
+    pub intake_days: u32,
+    pub energy_kcal: Option<u32>,
+    pub protein_g: Option<u32>,
+    pub carbs_g: Option<u32>,
+    pub fat_g: Option<u32>,
+    /// Days counted behind the water mean: only intakes with water.
+    pub water_days: u32,
+    /// Litres with a decimal comma, e.g. `3,16`.
+    pub water: Option<String>,
+    /// Days with at least one Activity (R14).
+    pub activity_days: u32,
+}
+
+impl ReportSummaryView {
+    fn new(summary: ReportSummary, activity_days: u32) -> Self {
+        Self {
+            intake_days: summary.intake_days,
+            energy_kcal: summary.energy_kcal,
+            protein_g: summary.protein_g,
+            carbs_g: summary.carbs_g,
+            fat_g: summary.fat_g,
+            water_days: summary.water_days,
+            water: summary
+                .water_hundredth_l
+                .map(|hundredth| format_trimmed(hundredth, 100)),
+            activity_days,
+        }
+    }
+}
+
+/// The 15 days ending today, oldest first, taken from a listing and a curve.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Report {
+    /// `listing.today`. The report does not read a clock of its own.
+    pub today: String,
+    pub from: String,
+    pub to: String,
+    pub from_label: String,
+    pub to_label: String,
+    pub days: Vec<ReportDay>,
+    /// Same 15 days as the cards, oldest first.
+    pub points: Vec<ReportPoint>,
+    pub trend: Option<ReportTrend>,
+    pub summary: ReportSummaryView,
+}
+
+impl Report {
+    /// Cards follow `curve` (oldest first). Each card is the listing row of that
+    /// date, or an empty card when the listing has no such row. `curve` is the
+    /// 15-day [`WeightCurve`], the same window as `shortVariation`. `intakes`
+    /// feed the summary means over the 15 days ending `today`.
+    ///
+    /// # Errors
+    ///
+    /// `Err` when two intakes share a date (S2).
+    pub fn assemble(
+        listing: &Listing,
+        curve: &WeightCurve,
+        intakes: &[Intake],
+        today: Day,
+    ) -> Result<Self, DuplicateIntakeDate> {
+        let summary = report_summary(intakes, today)?;
+        let days = curve
+            .days
+            .iter()
+            .map(|point| {
+                report_day(
+                    point,
+                    listing.days.iter().find(|day| day.date == point.date),
+                )
+            })
+            .collect::<Vec<_>>();
+        let from = days.first();
+        let to = days.last();
+        let points = curve
+            .days
+            .iter()
+            .map(|point| ReportPoint {
+                date: point.date.clone(),
+                label: point.label.clone(),
+                weigh_tenth_kg: point.weigh_tenth_kg,
+                trend_tenth_kg: point.trend_tenth_kg,
+            })
+            .collect::<Vec<_>>();
+        let trend = match (
+            points.first().and_then(|point| point.trend_tenth_kg),
+            points.last().and_then(|point| point.trend_tenth_kg),
+            curve.variation_tenth_kg,
+        ) {
+            (Some(start_tenth_kg), Some(end_tenth_kg), Some(variation_tenth_kg)) => {
+                Some(ReportTrend {
+                    start_tenth_kg,
+                    end_tenth_kg,
+                    variation_tenth_kg,
+                })
+            }
+            _ => None,
+        };
+        let activity_days = days.iter().filter(|day| !day.activities.is_empty()).count();
+        Ok(Self {
+            today: listing.today.clone(),
+            from: from.map(|day| day.date.clone()).unwrap_or_default(),
+            to: to
+                .map(|day| day.date.clone())
+                .unwrap_or_else(|| listing.today.clone()),
+            from_label: from.map(|day| day.label.clone()).unwrap_or_default(),
+            to_label: to.map(|day| day.label.clone()).unwrap_or_default(),
+            days,
+            points,
+            trend,
+            summary: ReportSummaryView::new(summary, u32::try_from(activity_days).unwrap_or(0)),
+        })
+    }
+}
+
+fn report_day(point: &CurveDay, source: Option<&DayView>) -> ReportDay {
+    let weigh_in = source.and_then(|day| day.weigh_in.as_ref());
+    let intake = source.and_then(|day| day.intake.as_ref());
+    ReportDay {
+        date: point.date.clone(),
+        label: source
+            .map(|day| day.label.clone())
+            .unwrap_or_else(|| point.label.clone()),
+        weight: weigh_in.map(|weigh_in| format!("{} kg", weigh_in.weight)),
+        not_fasted: weigh_in.is_some_and(|weigh_in| !weigh_in.fasted),
+        energy_kcal: intake.map(|intake| intake.energy_kcal),
+        protein_g: intake.map(|intake| intake.protein_g.clone()),
+        carbs_g: intake.map(|intake| intake.carbs_g.clone()),
+        fat_g: intake.map(|intake| intake.fat_g.clone()),
+        water: intake.and_then(|intake| intake.water.clone()),
+        activities: source
+            .map(|day| {
+                day.activities
+                    .iter()
+                    .map(|activity| ReportActivity {
+                        kind: activity.kind.clone(),
+                        note: activity.note.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+    }
+}
+
 /// The chart states that are a sentence rather than a series.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(
@@ -822,6 +1021,16 @@ pub fn store_message(e: &StoreError) -> String {
 /// Shown when the database lock cannot be taken.
 pub fn database_unavailable_message() -> &'static str {
     "La base de données est indisponible, redémarrez l'application."
+}
+
+/// Shown when the report file cannot be written (R16).
+pub fn report_save_failed_message() -> &'static str {
+    "Le rapport n'a pas pu être enregistré."
+}
+
+/// Shown when the chosen path is not a PNG file.
+pub fn report_not_png_message() -> &'static str {
+    "Le rapport s'enregistre dans un fichier .png."
 }
 
 /// Shown when the history contains two weigh-ins on the same day.
@@ -1743,6 +1952,278 @@ mod tests {
         assert!(!chart_note.is_empty());
         assert!(none.days.iter().all(|d| d.weigh_tenth_kg.is_none()));
         assert!(none.trend.is_none());
+    }
+
+    #[test]
+    fn report_covers_fifteen_days_ending_today_oldest_first() {
+        let today = "2026-11-24";
+        let weigh_ins = [
+            weigh("2026-11-09", 770),
+            weigh_at("2026-11-11", 810, false),
+            weigh(today, 800),
+        ];
+        let listing = home(today, 10, &weigh_ins, &[], None);
+        let curve = WeightCurve::build(day(today), &weigh_ins, CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(&listing, &curve, &[], day(today)).unwrap();
+        assert_eq!(listing.today, today);
+        assert_eq!(report.today, today);
+        assert_eq!(report.days.len(), 15);
+        assert_eq!(report.from, "2026-11-10");
+        assert_eq!(report.to, today);
+        assert_eq!(report.from_label, "mar. 10 nov.");
+        assert_eq!(report.to_label, "mar. 24 nov.");
+        assert_eq!(report.days[0].date, "2026-11-10");
+        assert_eq!(report.days[14].date, today);
+        assert!(
+            report
+                .days
+                .windows(2)
+                .all(|pair| pair[0].date < pair[1].date)
+        );
+        assert!(report.days.iter().all(|row| row.date != "2026-11-09"));
+        let fed = report
+            .days
+            .iter()
+            .find(|row| row.date == "2026-11-11")
+            .unwrap();
+        assert_eq!(fed.weight.as_deref(), Some("81,0 kg"));
+        assert!(fed.not_fasted);
+        let fasted = report.days.iter().find(|row| row.date == today).unwrap();
+        assert_eq!(fasted.weight.as_deref(), Some("80,0 kg"));
+        assert!(!fasted.not_fasted);
+        let empty = report
+            .days
+            .iter()
+            .find(|row| row.date == "2026-11-12")
+            .unwrap();
+        assert!(empty.weight.is_none());
+        assert!(!empty.not_fasted);
+        assert_eq!(curve.days.len(), 15);
+    }
+
+    #[test]
+    fn report_keeps_activity_kind_and_note_in_entry_order() {
+        use dietlock_core::{Activity, ActivityKind};
+        let today = "2026-11-24";
+        let listing = home(today, 10, &[], &[], None).attach_activities(&[
+            StoredActivity::new(
+                1,
+                Activity::new(day("2026-11-24"), ActivityKind::Walk, "chien").unwrap(),
+            ),
+            StoredActivity::new(
+                2,
+                Activity::new(day("2026-11-24"), ActivityKind::Strength, "  ").unwrap(),
+            ),
+            StoredActivity::new(
+                3,
+                Activity::new(day("2026-11-09"), ActivityKind::Run, "dehors").unwrap(),
+            ),
+        ]);
+        let curve = WeightCurve::build(day(today), &[], CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(&listing, &curve, &[], day(today)).unwrap();
+        let card = report.days.iter().find(|row| row.date == today).unwrap();
+        assert_eq!(
+            card.activities,
+            vec![
+                ReportActivity {
+                    kind: "walk".to_owned(),
+                    note: Some("chien".to_owned()),
+                },
+                ReportActivity {
+                    kind: "strength".to_owned(),
+                    note: None,
+                },
+            ]
+        );
+        assert!(report.days.iter().all(|row| row.date != "2026-11-09"));
+    }
+
+    fn fasted_back(end: &str, count: u16, tenth: u16) -> Vec<WeighIn> {
+        let mut date = day(end);
+        let mut out = Vec::new();
+        for _ in 0..count {
+            out.push(WeighIn::new(date, tenth, true).unwrap());
+            date = date.previous().unwrap();
+        }
+        out
+    }
+
+    #[test]
+    fn report_trend_box_is_the_displayed_short_variation() {
+        let today = "2026-11-24";
+        let mut weigh_ins = fasted_back("2026-11-10", 7, 800);
+        weigh_ins.extend(fasted_back(today, 7, 786));
+        let curve = WeightCurve::build(day(today), &weigh_ins, CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(
+            &home(today, 10, &weigh_ins, &[], None),
+            &curve,
+            &[],
+            day(today),
+        )
+        .unwrap();
+        let trend = report.trend.expect("both ends have a trend");
+        assert_eq!(trend.start_tenth_kg, 800);
+        assert_eq!(trend.end_tenth_kg, 786);
+        assert_eq!(trend.variation_tenth_kg, -14);
+        assert_eq!(curve.variation_tenth_kg, Some(-14));
+        assert_eq!(
+            trend.variation_tenth_kg,
+            trend.end_tenth_kg - trend.start_tenth_kg
+        );
+        let gap = report
+            .points
+            .iter()
+            .find(|point| point.date == "2026-11-16")
+            .unwrap();
+        assert_eq!(gap.trend_tenth_kg, None);
+        assert_eq!(gap.weigh_tenth_kg, None);
+        let before = report
+            .points
+            .iter()
+            .find(|point| point.date == "2026-11-13")
+            .unwrap();
+        let after = report
+            .points
+            .iter()
+            .find(|point| point.date == "2026-11-21")
+            .unwrap();
+        assert_eq!(before.trend_tenth_kg, Some(800));
+        assert_eq!(after.trend_tenth_kg, Some(786));
+    }
+
+    #[test]
+    fn report_omits_the_trend_box_when_an_end_has_no_trend() {
+        let today = "2026-11-24";
+        let only_today = fasted_back(today, 4, 790);
+        let curve = WeightCurve::build(day(today), &only_today, CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(
+            &home(today, 10, &only_today, &[], None),
+            &curve,
+            &[],
+            day(today),
+        )
+        .unwrap();
+        assert!(report.trend.is_none());
+        assert_eq!(curve.variation_tenth_kg, None);
+        assert!(report.points.first().unwrap().trend_tenth_kg.is_none());
+        assert!(report.points.last().unwrap().trend_tenth_kg.is_some());
+
+        let only_start = fasted_back("2026-11-10", 7, 800);
+        let curve = WeightCurve::build(day(today), &only_start, CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(
+            &home(today, 10, &only_start, &[], None),
+            &curve,
+            &[],
+            day(today),
+        )
+        .unwrap();
+        assert!(report.trend.is_none());
+        assert!(report.points.first().unwrap().trend_tenth_kg.is_some());
+        assert!(report.points.last().unwrap().trend_tenth_kg.is_none());
+    }
+
+    #[test]
+    fn report_distinguishes_an_empty_day_from_a_zero_intake() {
+        let today = "2026-11-24";
+        let zero = Intake::new(day("2026-11-12"), 0, 0, 0, Some(0)).unwrap();
+        let intakes = [zero];
+        let report = Report::assemble(
+            &home(today, 10, &[], &intakes, None),
+            &WeightCurve::build(day(today), &[], CURVE_SHORT_DAYS).unwrap(),
+            &intakes,
+            day(today),
+        )
+        .unwrap();
+        let entered = report
+            .days
+            .iter()
+            .find(|row| row.date == "2026-11-12")
+            .unwrap();
+        assert_eq!(entered.energy_kcal, Some(0));
+        assert_eq!(entered.protein_g.as_deref(), Some("0"));
+        assert_eq!(entered.carbs_g.as_deref(), Some("0"));
+        assert_eq!(entered.fat_g.as_deref(), Some("0"));
+        assert_eq!(entered.water.as_deref(), Some("0"));
+        let empty = report
+            .days
+            .iter()
+            .find(|row| row.date == "2026-11-13")
+            .unwrap();
+        assert_eq!(empty.energy_kcal, None);
+        assert_eq!(empty.protein_g, None);
+        assert_eq!(empty.carbs_g, None);
+        assert_eq!(empty.fat_g, None);
+        assert_eq!(empty.water, None);
+        assert_eq!(empty.weight, None);
+        assert!(empty.activities.is_empty());
+    }
+
+    #[test]
+    fn r11_summary_carries_the_means_and_the_counts() {
+        use dietlock_core::{Activity, ActivityKind};
+        let today = "2026-11-24";
+        let intakes = [
+            Intake::new(day("2026-11-23"), 1000, 2000, 500, Some(3000)).unwrap(),
+            Intake::new(day("2026-11-22"), 1100, 2000, 500, None).unwrap(),
+            Intake::new(day("2026-11-21"), 1000, 2000, 500, Some(3320)).unwrap(),
+        ];
+        let listing = home(today, 10, &[], &intakes, None).attach_activities(&[
+            StoredActivity::new(
+                1,
+                Activity::new(day("2026-11-23"), ActivityKind::Walk, "").unwrap(),
+            ),
+            StoredActivity::new(
+                2,
+                Activity::new(day("2026-11-23"), ActivityKind::Run, "").unwrap(),
+            ),
+            StoredActivity::new(
+                3,
+                Activity::new(day("2026-11-20"), ActivityKind::Bike, "").unwrap(),
+            ),
+        ]);
+        let curve = WeightCurve::build(day(today), &[], CURVE_SHORT_DAYS).unwrap();
+        let summary = Report::assemble(&listing, &curve, &intakes, day(today))
+            .unwrap()
+            .summary;
+        assert_eq!(summary.intake_days, 3);
+        assert_eq!(summary.protein_g, Some(103));
+        assert_eq!(summary.carbs_g, Some(200));
+        assert_eq!(summary.fat_g, Some(50));
+        assert_eq!(summary.energy_kcal, Some(1_663));
+        assert_eq!(summary.water_days, 2);
+        assert_eq!(summary.water.as_deref(), Some("3,16"));
+        assert_eq!(summary.activity_days, 2, "two days, three activities");
+    }
+
+    #[test]
+    fn r12_summary_of_an_empty_report_has_no_mean_and_no_zero() {
+        let today = "2026-11-24";
+        let curve = WeightCurve::build(day(today), &[], CURVE_SHORT_DAYS).unwrap();
+        let summary = Report::assemble(&home(today, 10, &[], &[], None), &curve, &[], day(today))
+            .unwrap()
+            .summary;
+        assert_eq!(summary.intake_days, 0);
+        assert_eq!(summary.energy_kcal, None);
+        assert_eq!(summary.protein_g, None);
+        assert_eq!(summary.water, None);
+        assert_eq!(summary.activity_days, 0);
+    }
+
+    #[test]
+    fn report_ignores_an_alert() {
+        let today = "2026-11-24";
+        let mut weigh_ins = fasted_back("2026-11-23", 4, 790);
+        weigh_ins.push(weigh(today, 820));
+        let listing = home(today, 10, &weigh_ins, &[], None);
+        assert!(listing.days[0].alert, "the home row is in alert");
+        let curve = WeightCurve::build(day(today), &weigh_ins, CURVE_SHORT_DAYS).unwrap();
+        let report = Report::assemble(&listing, &curve, &[], day(today)).unwrap();
+        let card = report.days.iter().find(|row| row.date == today).unwrap();
+        assert_eq!(card.weight.as_deref(), Some("82,0 kg"));
+        assert!(!card.not_fasted);
+        let json = serde_json::to_string(&report).unwrap();
+        assert!(!json.contains("alert"), "{json}");
+        assert!(!json.contains('⚠'), "{json}");
     }
 
     #[test]

@@ -1,21 +1,23 @@
 //! IPC commands. Business rules live in `dietlock-core`; this module only
 //! reads the clock, locks the store and converts to the view types.
 
+use std::path::Path;
 use std::sync::Mutex;
 
 use chrono::Timelike;
 use dietlock_core::{
-    ActivityDraft, Day, Intake, IntakePresence, SaveDecision, SwitchHour, TREND_WINDOW_DAYS,
-    WeighIn, build_activities, check_not_future, decide_intake, decide_water, decide_weigh_in,
-    parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
+    ActivityDraft, Day, Intake, IntakePresence, REPORT_DAYS, SaveDecision, SwitchHour,
+    TREND_WINDOW_DAYS, WeighIn, build_activities, check_not_future, decide_intake, decide_water,
+    decide_weigh_in, parse_macro_tenth_g, parse_water_ml, parse_weight_tenth_kg,
     proposed_intake_date as core_proposed_intake_date, proposed_weigh_in_date, trend,
 };
 use dietlock_store::{SaveError, Store, StoredActivity};
 use tauri::State;
 
 use crate::view::{
-    self, ActivityDraftInput, ActivitySaved, DeleteBlock, DeleteOutcome, DeleteTarget,
-    IntakeSaveOutcome, IntakeView, Listing, MacroSummary, SaveOutcome, WeighInView, WeightScreen,
+    self, ActivityDraftInput, ActivitySaved, CURVE_SHORT_DAYS, DeleteBlock, DeleteOutcome,
+    DeleteTarget, IntakeSaveOutcome, IntakeView, Listing, MacroSummary, Report, SaveOutcome,
+    WeighInView, WeightCurve, WeightScreen,
 };
 
 /// Current local day, read from the system clock.
@@ -223,9 +225,14 @@ pub fn proposed_intake_date(store: State<'_, Mutex<Store>>) -> Result<String, St
 pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
     let today = today()?;
     let now = now()?;
+    let store = lock(&store)?;
+    listing_on(&store, today, now)
+}
+
+/// The home listing `list_days` returns. The report assembles its cards from this.
+fn listing_on(store: &Store, today: Day, now: time::Time) -> Result<Listing, String> {
     let from = view::history_start(today);
     let weigh_from = from.minus_days(TREND_WINDOW_DAYS).unwrap_or(from);
-    let store = lock(&store)?;
     let weigh_ins = store
         .list_weigh_ins(weigh_from, today)
         .map_err(|e| view::store_message(&e))?;
@@ -240,7 +247,7 @@ pub fn list_days(store: State<'_, Mutex<Store>>) -> Result<Listing, String> {
         today: intakes.iter().any(|i| i.date() == today),
     };
     let proposed = core_proposed_intake_date(today, now, SwitchHour::default(), presence);
-    let activities = load_history_activities(&store, today)?;
+    let activities = load_history_activities(store, today)?;
     // The history starts 29 days back, so it covers both energy weeks (J−14 to yesterday).
     Listing::new(
         today,
@@ -269,13 +276,35 @@ fn load_history_activities(store: &Store, today: Day) -> Result<Vec<StoredActivi
 pub fn weight_curve(store: State<'_, Mutex<Store>>) -> Result<WeightScreen, String> {
     let today = today()?;
     let store = lock(&store)?;
-    // Every saved weigh-in. The empty and single notices count the whole history,
-    // and a trend at the left edge of the chart reads six days before that edge.
-    let from = Day::parse("1000-01-01").map_err(|e| view::validation_message(&e))?;
-    let weigh_ins = store
-        .list_weigh_ins(from, today)
-        .map_err(|e| view::store_message(&e))?;
+    let weigh_ins = weigh_ins_for_curve(&store, today)?;
     WeightScreen::new(today, &weigh_ins).map_err(|_| view::duplicate_date_message().to_owned())
+}
+
+/// Every saved weigh-in. The empty and single notices count the whole history,
+/// and a trend at the left edge of the chart reads six days before that edge.
+fn weigh_ins_for_curve(store: &Store, today: Day) -> Result<Vec<WeighIn>, String> {
+    let from = Day::parse("1000-01-01").map_err(|e| view::validation_message(&e))?;
+    store
+        .list_weigh_ins(from, today)
+        .map_err(|e| view::store_message(&e))
+}
+
+/// The 15-day report. Cards come from the same listing as `list_days`.
+/// Points come from the same 15-day curve as `weight_curve`'s short window.
+#[tauri::command]
+pub fn report(store: State<'_, Mutex<Store>>) -> Result<Report, String> {
+    let today = today()?;
+    let now = now()?;
+    let store = lock(&store)?;
+    let listing = listing_on(&store, today, now)?;
+    let weigh_ins = weigh_ins_for_curve(&store, today)?;
+    let curve = WeightCurve::build(today, &weigh_ins, CURVE_SHORT_DAYS)
+        .map_err(|_| view::duplicate_date_message().to_owned())?;
+    let intakes = store
+        .list_intakes(today.minus_days(REPORT_DAYS - 1).unwrap_or(today), today)
+        .map_err(|e| view::store_message(&e))?;
+    Report::assemble(&listing, &curve, &intakes, today)
+        .map_err(|_| view::duplicate_intake_message().to_owned())
 }
 
 /// Macro summaries of the « Graphiques » screen, computed from the stored
@@ -384,6 +413,22 @@ fn apply_delete_activity(store: &Store, id: i64) -> Result<(), String> {
         .map_err(|e| view::store_message(&e))
 }
 
+/// Writes the report PNG at the path the user chose in the save dialog (R16).
+#[tauri::command]
+pub fn save_report_png(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    write_report_png(Path::new(&path), &bytes)
+}
+
+fn write_report_png(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let is_png = path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("png"));
+    if !is_png {
+        return Err(view::report_not_png_message().to_owned());
+    }
+    std::fs::write(path, bytes).map_err(|_| view::report_save_failed_message().to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,6 +436,48 @@ mod tests {
 
     fn day(s: &str) -> Day {
         Day::parse(s).unwrap()
+    }
+
+    /// A path in a fresh directory under the system temp dir.
+    fn temp_path(file: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "dietlock-report-{}-{}",
+            std::process::id(),
+            file.replace('.', "_")
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(file)
+    }
+
+    #[test]
+    fn r16_a_png_path_receives_exactly_the_bytes() {
+        let path = temp_path("rapport.png");
+        let bytes = [0x89, b'P', b'N', b'G', 1, 2, 3];
+        write_report_png(&path, &bytes).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn r16_the_png_extension_is_accepted_in_any_case() {
+        let path = temp_path("casse.PNG");
+        assert!(write_report_png(&path, &[1]).is_ok());
+    }
+
+    #[test]
+    fn r16_a_path_without_the_png_extension_is_refused_and_writes_nothing() {
+        for file in ["rapport.txt", "rapport"] {
+            let path = temp_path(file);
+            let error = write_report_png(&path, &[1]).unwrap_err();
+            assert_eq!(error, view::report_not_png_message(), "{file}");
+            assert!(!path.exists(), "{file}");
+        }
+    }
+
+    #[test]
+    fn r16_an_unwritable_path_reports_the_save_failure() {
+        let path = temp_path("missing").join("no-such-dir").join("rapport.png");
+        let error = write_report_png(&path, &[1]).unwrap_err();
+        assert_eq!(error, view::report_save_failed_message());
     }
 
     fn input(kind: Option<&str>, note: &str) -> ActivityDraftInput {

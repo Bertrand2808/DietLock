@@ -11,6 +11,7 @@ mod input;
 mod intake;
 mod macro_week;
 mod proposed_date;
+mod report_summary;
 mod trend;
 mod weigh_in;
 
@@ -30,6 +31,7 @@ pub use proposed_date::{
     IntakePresence, ProposedIntake, SwitchHour, check_not_future, proposed_intake_date,
     proposed_weigh_in_date,
 };
+pub use report_summary::{REPORT_DAYS, ReportSummary, report_summary};
 pub use trend::{
     DuplicateDate, TREND_MIN_WEIGH_INS, TREND_WINDOW_DAYS, display_tenth_kg, trend, variation,
 };

@@ -32,6 +32,15 @@ import {
   validateRows,
 } from "./activities.js";
 import { renderChart } from "./chart.js";
+import {
+  copiedMessage,
+  paintReport,
+  pngBlob,
+  reportClipboardItems,
+  reportFileName,
+  savedMessage,
+} from "./report.js";
+import { TOAST_DELAY_MS, createAutoHide } from "./toast.js";
 import { deleteFailureText, deleteQuestion, deleteThenReload, groupKcal } from "./delete.js";
 import { energyCopy } from "./energy.js";
 import { renderMacroChart } from "./macro_chart.js";
@@ -70,6 +79,7 @@ let queue = [];
 let busy = false;
 // True once the user has typed in the water field since it was last synced (S5).
 let waterDirty = false;
+const SCREEN_NAMES = ["today", "weight", "report"];
 let screenName = "today";
 let span = 15;
 let curve = null;
@@ -399,11 +409,11 @@ function visibleDays() {
 }
 
 function paintScreenTabs() {
-  const today = screenName === "today";
-  $("screen-today").hidden = !today;
-  $("screen-weight").hidden = today;
-  $("tab-today").setAttribute("aria-selected", today ? "true" : "false");
-  $("tab-weight").setAttribute("aria-selected", today ? "false" : "true");
+  for (const name of SCREEN_NAMES) {
+    const shown = name === screenName;
+    $(`screen-${name}`).hidden = !shown;
+    $(`tab-${name}`).setAttribute("aria-selected", shown ? "true" : "false");
+  }
 }
 
 function paintSpan() {
@@ -573,6 +583,10 @@ async function showScreen(name) {
   if (name !== "today") closePicker();
   screenName = name;
   paintScreenTabs();
+  if (name === "report") {
+    await paintReportScreen();
+    return;
+  }
   if (name !== "weight") return;
   if (!curveLoaded) {
     try {
@@ -587,6 +601,7 @@ async function showScreen(name) {
 
 async function refresh() {
   render(await invoke("list_days"));
+  if (screenName === "report") await paintReportScreen();
   if (!curveLoaded) return;
   try {
     await loadCurve();
@@ -1027,8 +1042,7 @@ function openActivityForm() {
   clearActivityError();
   // Nothing behind the form can take focus or a click while it is open.
   document.querySelector(".titlebar").inert = true;
-  $("screen-today").inert = true;
-  $("screen-weight").inert = true;
+  for (const name of SCREEN_NAMES) $(`screen-${name}`).inert = true;
   $("act-overlay").hidden = false;
   paintChips();
   renderActivityRows();
@@ -1043,8 +1057,7 @@ function closeActivityForm() {
   activityRows = [];
   $("act-overlay").hidden = true;
   document.querySelector(".titlebar").inert = false;
-  $("screen-today").inert = false;
-  $("screen-weight").inert = false;
+  for (const name of SCREEN_NAMES) $(`screen-${name}`).inert = false;
   $("act-open").focus();
 }
 
@@ -1122,6 +1135,7 @@ document.addEventListener(
 
 $("tab-today").addEventListener("click", () => showScreen("today"));
 $("tab-weight").addEventListener("click", () => showScreen("weight"));
+$("tab-report").addEventListener("click", () => showScreen("report"));
 $("span-seg").addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button) return;
@@ -1137,6 +1151,111 @@ $("macro-seg").addEventListener("click", (event) => {
 $("entry").addEventListener("submit", (event) => event.preventDefault());
 $("save").addEventListener("click", saveAll);
 $("act-open").addEventListener("click", openActivityForm);
+$("report-copy").addEventListener("click", copyReport);
+$("report-save").addEventListener("click", saveReport);
+$("toast").addEventListener("mouseenter", () => toastTimer.pause());
+$("toast").addEventListener("mouseleave", () => toastTimer.resume());
+$("toast").addEventListener("click", hideToast);
+
+let reportBusy = false;
+// The report painted on the page: what « Copier » exports (R10).
+let shownReport = null;
+
+const toastTimer = createAutoHide({ hide: hideToast });
+const copiedLabelTimer = createAutoHide({
+  hide: () => {
+    $("report-copy").textContent = "Copier";
+  },
+});
+
+function showToast(text) {
+  $("toast-msg").textContent = text;
+  $("toast").hidden = false;
+  restartToastBar();
+  toastTimer.start();
+}
+
+// Removing the class and reading the layout makes the countdown start over.
+function restartToastBar() {
+  const bar = $("toast-bar");
+  bar.style.setProperty("--toast-ms", `${TOAST_DELAY_MS}ms`);
+  bar.classList.remove("running");
+  void bar.offsetWidth;
+  bar.classList.add("running");
+}
+
+function hideToast() {
+  toastTimer.cancel();
+  $("toast").hidden = true;
+}
+
+function showReportError(text) {
+  $("report-error").textContent = text;
+  $("report-error").hidden = false;
+}
+
+// The report is recomputed from the stored data each time it is shown (R15).
+async function paintReportScreen() {
+  $("report-error").hidden = true;
+  try {
+    const report = await invoke("report");
+    paintReport($("report-canvas"), report);
+    shownReport = report;
+    $("report-copy").disabled = false;
+    $("report-save").disabled = false;
+  } catch (e) {
+    shownReport = null;
+    $("report-copy").disabled = true;
+    $("report-save").disabled = true;
+    showReportError(errorText(e));
+  }
+}
+
+// « Télécharger »: the user picks a file, then the PNG of the displayed canvas is written there (R16).
+async function saveReport() {
+  if (reportBusy || !shownReport) return;
+  reportBusy = true;
+  $("report-error").hidden = true;
+  try {
+    const path = await window.__TAURI__.dialog.save({
+      defaultPath: reportFileName(shownReport),
+      filters: [{ name: "PNG", extensions: ["png"] }],
+    });
+    // Closing the dialog without a file changes nothing and says nothing.
+    if (path === null) return;
+    const blob = await pngBlob($("report-canvas"));
+    const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+    await invoke("save_report_png", { path, bytes });
+    showToast(savedMessage(path));
+  } catch (e) {
+    showReportError(errorText(e));
+  } finally {
+    reportBusy = false;
+  }
+}
+
+function copyReport() {
+  if (reportBusy || !shownReport) return;
+  reportBusy = true;
+  $("report-error").hidden = true;
+  const copied = shownReport;
+  navigator.clipboard
+    .write(reportClipboardItems(pngBlob($("report-canvas"))))
+    .then(() => {
+      $("report-copy").textContent = "✓ Copié";
+      copiedLabelTimer.start();
+      showToast(copiedMessage(copied));
+    })
+    .catch(() => {
+      copiedLabelTimer.cancel();
+      $("report-copy").textContent = "Copier";
+      showReportError("Le rapport n'a pas pu être copié.");
+    })
+    .finally(() => {
+      reportBusy = false;
+    });
+}
+
 $("act-chip").addEventListener("click", () => togglePicker("activity"));
 $("act-add").addEventListener("click", () => {
   activityRows = addRow(activityRows);

@@ -97,8 +97,15 @@ Updated: 2026-11-24
 - R5 · The 15-day change is Trend(J) − Trend(J−14), shown only when both ends have a Trend.
 - R6 · The report never shows an Alert.
 - R7 · The report includes a note that an empty value means nothing was entered and that Energy = 4P + 4C + 9F.
-- R8 · The report is an image copied for pasting into a message, not a file.
-- R9 · The user is told when the report has been copied, with its 15-day date range.
+- R8 · The report is an image that can be copied for pasting into a message, or saved as a PNG file.
+- R9 · The user is told when the report has been copied or saved, with its 15-day date range.
+- R10 · The user can view the report, exactly as it will be copied, before copying it.
+- R11 · The report opens with a summary of the 15 days: the mean per day of Energy, protein, carbohydrate, fat and water, each with the number of days counted.
+- R12 · A mean counts only the days with an Intake, today included. A day without Intake is never read as 0. With no Intake in the 15 days there is no mean.
+- R13 · The Energy mean is rounded half away from zero to a whole kcal (E5), the macro means to a whole gram (M5), and the water mean keeps up to two decimals in litres (S6).
+- R14 · The summary also gives the number of days with at least one Activity.
+- R15 · The report is recomputed from the stored data each time it is shown, so it reflects every entry and deletion made since.
+- R16 · The user chooses where the file is saved. The saved file is exactly the image shown on the page, and its name carries the first and last day of the 15 days. Closing the choice without saving writes nothing and shows no error.
 
 ## Edge cases
 - A missing Intake is never a zero, in any mean or gap.
@@ -111,4 +118,9 @@ Updated: 2026-11-24
 - Import from another tracking app.
 - Reminders and notifications.
 - PDF and CSV export of the report.
+- Choosing a custom report period: the report is always the 15 days ending today.
 - Linking a day's macros to the next day's Weigh-in in the analysis.
+
+## Decision journal
+- 2026-11-24 · The report becomes a page the user can view, with a 15-day summary (R10–R15); the period stays fixed at 15 days (DEV-85).
+- 2026-11-24 · The report can also be saved as a PNG file, in addition to the copy (R8, R9, R16) (DEV-85).

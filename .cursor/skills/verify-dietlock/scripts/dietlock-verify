@@ -946,6 +946,7 @@ def cmd_frontend_test(_args: list[str]) -> int:
         "src/keys.test.js",
         "src/save.test.js",
         "src/energy.test.js",
+        "src/report.test.js",
     ]
     command = ["node", "--test", *files]
     proc = subprocess.run(command, cwd=REPO, capture_output=True, text=True)

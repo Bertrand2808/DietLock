@@ -1,6 +1,6 @@
 {
   "identifier": "drag-window",
-  "description": "Lets the title bar move the window.",
+  "description": "Lets the title bar move the window and the report open its save dialog.",
   "windows": ["main"],
-  "permissions": ["core:window:allow-start-dragging"]
+  "permissions": ["core:window:allow-start-dragging", "dialog:allow-save"]
 }
