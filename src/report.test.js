@@ -87,6 +87,7 @@ test("the trend box shows both ends and the gap, and is absent without a trend",
   assert.ok(withTrend.includes("Tendance sur 15 jours"));
   assert.ok(withTrend.includes("80,0 → 78,6 kg"));
   assert.ok(withTrend.includes("\u22121,4 kg"));
+  assert.ok(withTrend.includes("80,0 → 78,6 kg · Écart \u22121,4 kg"));
   const without = paintedTexts([day("2026-11-24", {})], { trend: null, points: null });
   assert.equal(without.includes("Tendance sur 15 jours"), false);
 });
